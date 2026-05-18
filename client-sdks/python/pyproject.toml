@@ -1,0 +1,39 @@
+[tool.poetry]
+name = "vams-llm-client"
+version = "0.1.0"
+description = "Provider-agnostic LLM client SDK for the basic-infra platform"
+authors = ["Dmitry"]
+readme = "README.md"
+packages = [{include = "vams_llm_client"}]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+httpx = "^0.27"
+pydantic = "^2.7"
+# Optional cloud-provider deps — install via extras
+openai = { version = "^1.50", optional = true }
+anthropic = { version = "^0.40", optional = true }
+
+[tool.poetry.extras]
+openai = ["openai"]
+anthropic = ["anthropic"]
+all = ["openai", "anthropic"]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3"
+pytest-asyncio = "^0.24"
+respx = "^0.21"
+ruff = "^0.6"
+mypy = "^1.11"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true

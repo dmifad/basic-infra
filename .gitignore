@@ -1,0 +1,44 @@
+# ─── Python ──────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# ─── Tenant store (seeded by CLI — never committed) ─────────────────────────
+tenants/*.db
+tenants/*.db-journal
+tenants/*.db-wal
+*.sqlite
+*.sqlite3
+
+# ─── Models & caches (host bind path; never committed) ──────────────────────
+models/*
+!models/README.md
+hf-cache/
+*.gguf
+
+# ─── Local env & secrets ────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+secrets/
+
+# ─── Editor / OS ────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# ─── Build artefacts ────────────────────────────────────────────────────────
+client-sdks/python/dist/
+poetry.lock

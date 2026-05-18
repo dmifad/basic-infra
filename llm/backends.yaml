@@ -1,0 +1,82 @@
+# ============================================================================
+# basic-infra backend registry
+#
+# Defines which backends are available and which models route to them.
+# Loaded at gateway startup and on SIGHUP.
+#
+# Schema: see llm/gateway/app/routing/registry.py (Pydantic models).
+# Documentation: docs/runbooks/adding-a-backend.md
+# ============================================================================
+
+backends:
+
+  # ─── T-pro via llama.cpp (default LLM) ──────────────────────────────────
+  - name: llama-cpp-tpro
+    kind: openai_compat
+    base_url: http://tpro-backend:8080/v1
+    timeout_seconds: 900
+    models:
+      - id: t-pro-it-2.1-q8
+        backend_model_name: T-pro-it-2.1-Q8_0.gguf
+        capabilities: [chat, completions, structured]
+        notes: |
+          T-Tech T-pro 2.1, Q8_0 GGUF quantization.
+          Best general-purpose model for Russian. CPU and GPU profiles.
+
+      - id: t-pro-it-2.1-fp8
+        backend_model_name: T-pro-it-2.1-FP8
+        capabilities: [chat, completions, structured]
+        notes: |
+          FP8 version — GPU only, faster than Q8.
+          Enable via LLM_BACKEND_MODEL_NAME override.
+
+  # ─── BGE-M3 embeddings via TEI ──────────────────────────────────────────
+  - name: tei-embed
+    kind: tei
+    base_url: http://tei-embed:80
+    timeout_seconds: 60
+    models:
+      - id: bge-m3
+        backend_model_name: BAAI/bge-m3
+        capabilities: [embeddings]
+        notes: |
+          Multilingual sentence embeddings, 1024-dim dense.
+          Strong on Russian. Used for RAG retrieval in client projects.
+
+  # ─── BGE Reranker v2 m3 via TEI ─────────────────────────────────────────
+  - name: tei-rerank
+    kind: tei_rerank
+    base_url: http://tei-rerank:80
+    timeout_seconds: 60
+    models:
+      - id: bge-reranker-v2-m3
+        backend_model_name: BAAI/bge-reranker-v2-m3
+        capabilities: [rerank]
+        notes: |
+          Cross-encoder reranker, multilingual.
+          Standard companion to bge-m3 for two-stage retrieval.
+
+  # ─── Optional: OpenAI cloud fallback (disabled by default) ──────────────
+  # - name: openai-cloud
+  #   kind: openai
+  #   base_url: https://api.openai.com/v1
+  #   api_key_env: OPENAI_API_KEY
+  #   timeout_seconds: 60
+  #   models:
+  #     - id: gpt-4o-mini
+  #       backend_model_name: gpt-4o-mini
+  #       capabilities: [chat, completions, embeddings, structured]
+  #     - id: text-embedding-3-small
+  #       backend_model_name: text-embedding-3-small
+  #       capabilities: [embeddings]
+
+  # ─── Optional: Anthropic cloud (disabled by default) ────────────────────
+  # - name: anthropic-cloud
+  #   kind: anthropic
+  #   base_url: https://api.anthropic.com/v1
+  #   api_key_env: ANTHROPIC_API_KEY
+  #   timeout_seconds: 60
+  #   models:
+  #     - id: claude-haiku-4-5
+  #       backend_model_name: claude-haiku-4-5
+  #       capabilities: [chat, completions, structured]

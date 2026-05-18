@@ -1,0 +1,78 @@
+# ============================================================================
+# basic-infra — top-level orchestration  (SKELETON — finalized in Phase 5)
+#
+# Profiles:
+#   basic     gateway + redis            (always needed)
+#   llm-cpu   T-pro on CPU + TEI         (works without a GPU)
+#   llm-gpu   T-pro on GPU + TEI         (needs nvidia runtime)
+#
+#   make up                     -> basic + llm-gpu
+#   make up DEFAULT_PROFILE=llm-cpu
+#
+# Host binding: the gateway is published on 127.0.0.1 only (ADR-0003).
+# Backend containers bind 0.0.0.0 *inside* the compose network — never on host.
+#
+# Phase 1 leaves backend `command`, healthchecks and full env wiring as stubs;
+# Phase 5 wires them against real T-pro / BGE images.
+# ============================================================================
+
+x-common-env: &common-env
+  TZ: Europe/Moscow
+
+services:
+
+  # ─── Gateway (FastAPI) ────────────────────────────────────────────────────
+  gateway:
+    profiles: ["basic"]
+    build:
+      context: ./llm/gateway
+    container_name: basic-infra-gateway
+    environment:
+      <<: *common-env
+      # GATEWAY_*, REDIS_URL, BACKENDS_CONFIG, TENANT_DB_PATH — wired in Phase 5
+    ports:
+      - "127.0.0.1:8003:8003"
+    # depends_on / volumes / healthcheck — wired in Phase 5
+
+  # ─── Redis (rate-limit token buckets) ────────────────────────────────────
+  redis:
+    profiles: ["basic"]
+    image: redis:7-alpine
+    container_name: basic-infra-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ─── T-pro via llama.cpp — GPU profile ───────────────────────────────────
+  tpro-backend-gpu:
+    profiles: ["llm-gpu"]
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: basic-infra-tpro-gpu
+    # command / volumes / GPU reservation — wired in Phase 5
+
+  # ─── T-pro via llama.cpp — CPU profile ───────────────────────────────────
+  tpro-backend-cpu:
+    profiles: ["llm-cpu"]
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: basic-infra-tpro-cpu
+    # command / volumes — wired in Phase 5
+
+  # ─── TEI embeddings (BGE-M3) ──────────────────────────────────────────────
+  tei-embed:
+    profiles: ["llm-cpu", "llm-gpu"]
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    container_name: basic-infra-tei-embed
+    # command / volumes / env — wired in Phase 5
+
+  # ─── TEI rerank (BGE-Reranker-v2-m3) ─────────────────────────────────────
+  tei-rerank:
+    profiles: ["llm-cpu", "llm-gpu"]
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    container_name: basic-infra-tei-rerank
+    # command / volumes / env — wired in Phase 5
+
+volumes:
+  models-cache:
+    name: basic-infra-models-cache
