@@ -41,3 +41,6 @@ secrets/
 # ─── Build artefacts ────────────────────────────────────────────────────────
 client-sdks/python/dist/
 poetry.lock
+
+# Claude Code harness artifacts
+.claude/

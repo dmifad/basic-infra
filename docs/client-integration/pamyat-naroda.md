@@ -1,19 +1,52 @@
 # Client integration — pamyat-naroda
 
-> **Status:** stub. Filled in Phase 6 with the actual integration patterns used.
+How `pamyat-naroda-graph` consumes the basic-infra LLM platform (Week 4, Phase 6).
 
-How `pamyat-naroda-graph` consumes the basic-infra LLM platform.
+## What changed
 
-Reference: `docs/specs/llm-platform-spec.md` § "Migration paths — pamyat-naroda".
+pamyat ran its own `llm-gateway`, `reranker` and `tpro-backend` services. All
+three are removed; LLM work now goes through the platform.
 
-## Summary of changes (planned)
+- **`/analyze`** — was a domain endpoint in the standalone `llm-gateway`
+  service. Relocated to `services/worker/app/analysis/` as an in-process
+  `run_analysis()` the worker calls directly; the LLM completion goes through
+  the SDK.
+- **`analyze_run.py`** (worker task) — rerank via `client.rerank()`; analysis
+  via the in-process `run_analysis()` (no more HTTP to `llm-gateway`/`reranker`).
+- **`retrieval`** — kept (it owns the FAISS index). Its embedding step now
+  calls `client.embeddings`; the local BGE-M3 load and `FlagEmbedding`/`torch`
+  are gone (the `retrieval` image dropped from 6.1 GB to 715 MB).
 
-- Remove LLM services from `docker-compose.yml`: `llm-gateway`, `reranker`,
-  `retrieval`, `tpro-backend-cpu`, `tpro-backend-gpu`.
-- Add `vams-llm-client` as a Poetry path dependency.
-- Replace direct HTTP calls to `llm_gateway:8003` with SDK calls.
-- `/analyze` (domain-specific) moves into pamyat's own code.
-- `pn_retrieval` splits: embedding via SDK, vector search stays internal.
-- `.env`: add `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_API_KEY`.
+## Dependency
 
-_TODO(week4-phase-6): concrete diffs, retrieval-split decision, /analyze relocation._
+pamyat uses pip + per-service `requirements/`, not Poetry path deps. The SDK is
+**vendored** into `shared/vams_llm_client/` — the worker and retrieval
+Dockerfiles already `COPY shared/`, so no Dockerfile or requirements change is
+needed (the SDK's runtime deps, httpx + pydantic, are already in `base.txt`).
+
+## Connectivity
+
+pamyat's containers reach the platform over a shared Docker network — the
+gateway is **not** exposed to them on a host port (ADR-0003 keeps it on
+`127.0.0.1`).
+
+```bash
+docker network create basic-infra-net      # once
+```
+
+basic-infra's gateway joins `basic-infra-net`; pamyat's `worker` and `retrieval`
+join it too and reach the gateway as `basic-infra-gateway:8003`.
+
+## Configuration (`.env`)
+
+```bash
+LLM_PROVIDER=basic-infra
+LLM_BASE_URL=http://basic-infra-gateway:8003/v1
+LLM_API_KEY=<~/secrets/basic-infra/pamyat-naroda.key>
+```
+
+## Verification
+
+After `docker compose up -d --remove-orphans`, all six pamyat services come up
+healthy. `retrieval` and `worker` were confirmed embedding (1024-dim) and
+reranking live through the platform over `basic-infra-net`.

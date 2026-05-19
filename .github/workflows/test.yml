@@ -1,0 +1,57 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  gateway:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pipx install poetry==1.8.2
+      - name: install
+        working-directory: llm/gateway
+        run: poetry install --no-interaction
+      - name: lint (ruff + mypy-strict)
+        working-directory: llm/gateway
+        run: |
+          poetry run ruff check .
+          poetry run mypy .
+      - name: test
+        working-directory: llm/gateway
+        run: poetry run pytest -q
+
+  sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pipx install poetry==1.8.2
+      - name: install
+        working-directory: client-sdks/python
+        run: poetry install --all-extras --no-interaction
+      - name: lint (ruff + mypy-strict)
+        working-directory: client-sdks/python
+        run: |
+          poetry run ruff check .
+          poetry run mypy .
+      - name: test
+        working-directory: client-sdks/python
+        run: poetry run pytest -q
+
+  openapi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install openapi-spec-validator
+      - name: validate OpenAPI contract
+        run: python -m openapi_spec_validator docs/api/openapi.yaml

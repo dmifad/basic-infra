@@ -1,26 +1,48 @@
 # Runbook — managing tenants
 
-> **Status:** stub. Filled in Phase 8 once the tenant CLI (Phase 3) is built.
+Create, inspect, rotate and retire tenants. Reference: ADR-0003.
 
-How to create, inspect, rotate and retire tenants.
+## CLI
 
-Reference: ADR-0003 (multi-tenancy).
-
-## Commands
+Run from the gateway container, or on the host against the bind-mounted DB:
 
 ```bash
-basic-infra tenant create --id <id> --display "<name>" --models "*"
-basic-infra tenant list
-basic-infra tenant show <id>
-basic-infra tenant rotate-key <id>      # old key valid 24h
-basic-infra tenant delete <id> --confirm # soft delete (archive)
-basic-infra tenant smoke-test <id>
+# in the container
+docker compose exec gateway python -m app.tenancy.cli tenant <cmd>
+
+# on the host (TENANT_DB_PATH points at ./tenants/tenants.db)
+cd llm/gateway && TENANT_DB_PATH=../../tenants/tenants.db \
+    poetry run python -m app.tenancy.cli tenant <cmd>
 ```
+
+Commands:
+
+```
+tenant create --id <id> [--display "<name>"] [--models "*"]
+tenant list [--include-deleted]
+tenant show <id>
+tenant rotate-key <id>          # new key; old one valid 24 h
+tenant delete <id> --confirm    # soft delete (archived, kept for audit)
+tenant smoke-test <id> [--base-url ...] [--key ...]
+```
+
+## Seeding
+
+`make tenants-seed` creates `telcoss` and `pamyat-naroda` (idempotent). It runs
+on the host against `./tenants/tenants.db` — the gateway container, which runs
+as the host uid, shares that file.
 
 ## Notes
 
-- The raw API key is shown **once** on creation/rotation. Only its hash is stored.
+- The raw API key is printed **once** on create/rotate. Only an Argon2 hash is
+  stored — a lost key must be rotated, not recovered.
 - Rotated keys keep working for a 24 h grace window.
-- `delete` is a soft delete — it sets `deleted_at`, keeping an audit trail.
+- `delete` is a soft delete (`deleted_at` stamped); the row stays for audit.
+- Keys for the author's projects live in `~/secrets/basic-infra/<id>.key`.
 
-_TODO(week4-phase-8): key-storage conventions, rate-limit tuning, troubleshooting auth failures._
+## Rate limits
+
+Per `(tenant, endpoint)`, token-bucket in Redis. Defaults: chat 60/min,
+completions 60/min, embeddings 1000/min, rerank 200/min, models unlimited.
+Override per tenant via the `rate_limits` field. If Redis is down the limiter
+fails open (`RATE_LIMIT_FAIL_OPEN=true`).

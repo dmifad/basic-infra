@@ -88,14 +88,17 @@ Provider-agnostic: set `LLM_PROVIDER=openai` or `LLM_PROVIDER=anthropic` in your
 
 ## Status
 
-| Layer            | Status      | Notes                                          |
-| ---------------- | ----------- | ---------------------------------------------- |
-| LLM gateway      | Week 4      | OpenAI + rerank contract                       |
-| LLM backends     | Week 4      | llama.cpp (T-pro), TEI embed/rerank            |
-| Client SDK       | Week 4      | basic-infra + openai + anthropic providers     |
-| Storage layer    | Week 6 plan | Postgres-multi-db, Redis, MinIO as shared svcs |
-| Observability    | Week 6 plan | Prometheus, Loki, Grafana                      |
-| MCP server       | Future      | For Claude desktop integration                 |
+| Layer            | Status        | Notes                                          |
+| ---------------- | ------------- | ---------------------------------------------- |
+| LLM gateway      | ✅ Week 4     | OpenAI + rerank contract, multi-tenant         |
+| LLM backends     | ✅ Week 4     | llama.cpp (T-pro), TEI embed/rerank            |
+| Client SDK       | ✅ Week 4     | basic-infra + openai + anthropic providers     |
+| Storage layer    | Week 6 plan   | Postgres-multi-db, Redis, MinIO as shared svcs |
+| Observability    | Week 6 plan   | Prometheus, Loki, Grafana                      |
+| MCP server       | Future        | For Claude desktop integration                 |
+
+Both `telcoss` and `pamyat-naroda` consume the platform as clients — see
+[`docs/bridge-v8.md`](docs/bridge-v8.md) for the Week 4 end state.
 
 ## Repository layout
 

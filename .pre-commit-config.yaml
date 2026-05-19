@@ -1,0 +1,33 @@
+# pre-commit hooks for basic-infra.
+#   pip install pre-commit && pre-commit install
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        name: ruff (gateway + sdk)
+        args: ["--fix"]
+        files: ^(llm/gateway|client-sdks/python)/
+
+  - repo: local
+    hooks:
+      - id: mypy-gateway
+        name: mypy-strict (gateway)
+        entry: bash -c 'cd llm/gateway && poetry run mypy .'
+        language: system
+        pass_filenames: false
+        files: ^llm/gateway/
+
+      - id: mypy-sdk
+        name: mypy-strict (sdk)
+        entry: bash -c 'cd client-sdks/python && poetry run mypy .'
+        language: system
+        pass_filenames: false
+        files: ^client-sdks/python/
+
+      - id: openapi-validate
+        name: validate OpenAPI contract
+        entry: python -m openapi_spec_validator docs/api/openapi.yaml
+        language: system
+        pass_filenames: false
+        files: ^docs/api/openapi\.yaml$

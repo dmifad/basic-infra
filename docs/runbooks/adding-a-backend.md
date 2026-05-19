@@ -1,25 +1,38 @@
 # Runbook — adding a backend
 
-> **Status:** stub. Filled in Phase 8 once the adapter layer (Phase 4) is built.
+How to register a new model or a new backend engine. Reference: ADR-0005.
 
-How to register a new model or a new backend engine in the platform.
+## Add a new model to an existing backend kind
 
-Reference: ADR-0005 (backend pluggability).
+1. Edit `llm/backends.yaml` — add a `models:` entry under the relevant backend:
+   ```yaml
+   - id: my-new-model            # platform-facing id (version-pinned, no `latest`)
+     backend_model_name: ...     # the backend's native model name
+     capabilities: [chat, structured]
+   ```
+2. Restart the gateway: `make restart` (or `docker compose restart gateway`).
+3. Confirm: `curl -H "Authorization: Bearer $KEY" http://localhost:8013/v1/models | jq`.
 
-## Adding a new model to an existing backend kind
+The registry validates `backends.yaml` on load — an unknown `kind`, a duplicate
+model id, or a malformed entry fails startup loudly (`RegistryError`).
 
-1. Add a `models:` entry under the relevant backend in `llm/backends.yaml`.
-2. Reload config (`SIGHUP` to the gateway, or restart).
-3. Confirm with `GET /v1/models`.
+## Add a new backend kind
 
-_TODO(week4-phase-8): worked example._
+1. Implement an adapter in `llm/gateway/app/backends/<kind>.py` subclassing
+   `BackendAdapter`. Set `kind` and `capabilities`; override the operations the
+   backend serves (`chat_completion`, `embedding`, `rerank`, `completion`) and
+   `health()`. Use `self._request_json(...)` for backend HTTP — it maps
+   transport failures to the right gateway errors (503/504/400).
+2. Register the kind in `routing/registry.py` → `_ADAPTER_KINDS`.
+3. Add the backend service to `docker-compose.yml` (a fragment under
+   `llm/compose/`) and a `backends:` entry in `llm/backends.yaml`.
+4. Restart the stack.
 
-## Adding a new backend kind
+No other gateway code changes — the router dispatches by `kind`.
 
-1. Implement an adapter under `llm/gateway/app/backends/<kind>.py` satisfying
-   the `BackendAdapter` ABC.
-2. Register the `kind` in the registry's adapter dispatch table.
-3. Add a `backends:` entry in `llm/backends.yaml`.
-4. Add the backend service to `docker-compose.yml` under the right profile.
+## Health
 
-_TODO(week4-phase-8): worked example, health-check expectations, gotchas._
+The background `HealthChecker` probes every adapter every
+`BACKEND_HEALTH_INTERVAL_SECONDS`. A backend is marked unhealthy after
+`BACKEND_UNHEALTHY_THRESHOLD` consecutive failed probes; the router then fails
+fast on it (503) and `/ready` returns 503. A single success clears the streak.
