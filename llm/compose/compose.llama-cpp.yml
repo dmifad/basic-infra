@@ -1,0 +1,68 @@
+# T-pro via llama.cpp server — OpenAI-compatible chat backend (ADR-0005).
+#
+# Two mutually exclusive profiles: llm-cpu (works without a GPU) and llm-gpu.
+# Both expose the network alias `tpro-backend` so backends.yaml
+# (http://tpro-backend:8080/v1) resolves regardless of the active profile.
+# The model directory is bind-mounted read-only from the host.
+services:
+  tpro-backend-cpu:
+    profiles: ["llm-cpu"]
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: basic-infra-tpro-cpu
+    restart: unless-stopped
+    command:
+      - "-m"
+      - "/models/T-pro-it-2.1-Q8_0.gguf"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+      - "-c"
+      - "${LLM_CTX_SIZE_CPU:-8192}"
+      - "-t"
+      - "${TPRO_CPU_THREADS:-8}"
+      - "--alias"
+      - "T-pro-it-2.1-Q8_0.gguf"
+      # T-pro 2.1 is a reasoning model; keep its full output in `content`
+      # rather than splitting it into a non-standard `reasoning_content` field.
+      - "--reasoning-format"
+      - "none"
+    volumes:
+      - ${LLM_MODELS_DIR:-/home/vams/llm-models}:/models:ro
+    networks:
+      default:
+        aliases: ["tpro-backend"]
+
+  tpro-backend-gpu:
+    profiles: ["llm-gpu"]
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: basic-infra-tpro-gpu
+    restart: unless-stopped
+    command:
+      - "-m"
+      - "/models/T-pro-it-2.1-Q8_0.gguf"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+      - "-c"
+      - "${LLM_CTX_SIZE_GPU:-4096}"
+      - "--n-gpu-layers"
+      - "${LLAMA_N_GPU_LAYERS:-24}"
+      - "--alias"
+      - "T-pro-it-2.1-Q8_0.gguf"
+      # See the CPU service above — keep reasoning output inside `content`.
+      - "--reasoning-format"
+      - "none"
+    volumes:
+      - ${LLM_MODELS_DIR:-/home/vams/llm-models}:/models:ro
+    networks:
+      default:
+        aliases: ["tpro-backend"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: ["gpu"]

@@ -1,26 +1,27 @@
-# basic-infra LLM gateway — container image
-#
-# SKELETON — finalized in Phase 5 (live compose bring-up).
-# Phase 3/4 implement the app; the build below is the intended shape.
+# basic-infra LLM gateway — container image.
 
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    POETRY_VIRTUALENVS_CREATE=false
+    POETRY_VIRTUALENVS_CREATE=false \
+    POETRY_NO_INTERACTION=1 \
+    PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir poetry
+RUN pip install --no-cache-dir "poetry==1.8.2"
 
-# Dependency layer (cached independently of source)
-COPY pyproject.toml ./
-RUN poetry install --only main --no-root --no-interaction || true
+# Dependency layer — cached independently of application source.
+COPY pyproject.toml poetry.lock* ./
+RUN poetry install --only main --no-root
 
-# Application source
+# Application source.
 COPY app ./app
 
 EXPOSE 8003
 
-# TODO(week4-phase-5): finalize entrypoint once app.main:app is implemented.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"
+
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8003"]

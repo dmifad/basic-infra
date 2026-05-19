@@ -16,8 +16,7 @@ coverage.xml
 
 # ─── Tenant store (seeded by CLI — never committed) ─────────────────────────
 tenants/*.db
-tenants/*.db-journal
-tenants/*.db-wal
+tenants/*.db-*
 *.sqlite
 *.sqlite3
 

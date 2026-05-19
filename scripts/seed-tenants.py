@@ -1,50 +1,68 @@
 #!/usr/bin/env python3
-"""Seed default tenants (telcoss, pamyat-naroda).
+"""Seed the default tenants (telcoss, pamyat-naroda).
 
-Idempotent — re-running adds only what's missing, never overwrites existing.
-Run from the gateway container or with TENANT_DB_PATH set:
+Idempotent — re-running creates only what is missing and never overwrites an
+existing tenant. Reads the tenant DB path from ``TENANT_DB_PATH`` (defaults to
+the gateway's configured path).
 
-    docker exec -it basic-infra-gateway python -m scripts.seed_tenants
+Run via the gateway's Poetry environment, e.g.::
+
+    make tenants-seed
     # or
-    TENANT_DB_PATH=./tenants.db python scripts/seed-tenants.py
+    cd llm/gateway && TENANT_DB_PATH=../../tenants/tenants.db \\
+        poetry run python ../../scripts/seed-tenants.py
 
-Output:
-    Prints generated api_keys for new tenants. Save them — they cannot be
-    retrieved later (only their hash is stored).
-
-TODO(week4-phase-5): implement.
+Generated API keys are printed once and cannot be retrieved later — only their
+hashes are stored.
 """
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
-# from llm.gateway.app.tenancy.store import TenantStore
-# from llm.gateway.app.config import get_settings
+# Make the gateway's `app` package importable when run from the host.
+_GATEWAY = Path(__file__).resolve().parent.parent / "llm" / "gateway"
+if str(_GATEWAY) not in sys.path:
+    sys.path.insert(0, str(_GATEWAY))
 
+from app.config import Settings  # noqa: E402
+from app.tenancy.store import TenantStore  # noqa: E402
 
 SEED_TENANTS = [
-    {
-        "id": "telcoss",
-        "display_name": "Telcoss",
-        "allowed_models": ("*",),
-    },
-    {
-        "id": "pamyat-naroda",
-        "display_name": "Pamyat-Naroda Graph",
-        "allowed_models": ("*",),
-    },
+    {"id": "telcoss", "display_name": "Telcoss"},
+    {"id": "pamyat-naroda", "display_name": "Pamyat-Naroda Graph"},
 ]
 
 
 def main() -> int:
-    # TODO(week4-phase-5):
-    # 1. Load Settings
-    # 2. Open TenantStore at settings.tenant_db_path
-    # 3. For each seed:
-    #    - if store.get(seed.id) exists: print "exists, skipped"
-    #    - else: create, capture raw key, print "CREATED <id> KEY=<raw>"
-    # 4. Always print final reminder to save keys
-    raise NotImplementedError("week4-phase-5")
+    settings = Settings()
+    store = TenantStore(settings.tenant_db_path)
+    print(f"Tenant store: {settings.tenant_db_path}")
+    created: list[tuple[str, str]] = []
+    try:
+        for seed in SEED_TENANTS:
+            tenant_id = seed["id"]
+            if store.get(tenant_id) is not None:
+                print(f"  [-] {tenant_id}: exists, skipped")
+                continue
+            record, raw_key = store.create(
+                id=tenant_id, display_name=seed["display_name"], allowed_models=("*",)
+            )
+            created.append((record.id, raw_key))
+            print(f"  [+] CREATED {record.id}")
+    finally:
+        store.close()
+
+    if created:
+        print()
+        print("=" * 64)
+        print("SAVE THESE KEYS NOW — they cannot be retrieved later:")
+        for tenant_id, raw_key in created:
+            print(f"  {tenant_id:18} {raw_key}")
+        print("=" * 64)
+    else:
+        print("All seed tenants already present — nothing to do.")
+    return 0
 
 
 if __name__ == "__main__":

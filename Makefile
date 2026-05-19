@@ -6,6 +6,8 @@
 SHELL := /bin/bash
 COMPOSE := docker compose
 DEFAULT_PROFILE ?= llm-gpu
+GATEWAY_HOST_PORT ?= 8003
+GATEWAY_URL := http://localhost:$(GATEWAY_HOST_PORT)
 
 # ─── Top-level targets ──────────────────────────────────────────────────────
 
@@ -32,9 +34,9 @@ up:
 	$(COMPOSE) --profile basic --profile $(DEFAULT_PROFILE) up -d
 	@echo
 	@echo "basic-infra is up:"
-	@echo "  Gateway:      http://localhost:8003"
-	@echo "  Health:       curl http://localhost:8003/health"
-	@echo "  Readiness:    curl http://localhost:8003/ready"
+	@echo "  Gateway:      $(GATEWAY_URL)"
+	@echo "  Health:       curl $(GATEWAY_URL)/health"
+	@echo "  Readiness:    curl $(GATEWAY_URL)/ready"
 
 .PHONY: down
 down:
@@ -60,17 +62,20 @@ logs:
 
 .PHONY: status
 status:
-	@curl -s http://localhost:8003/ready | jq . || curl -s http://localhost:8003/ready
+	@curl -s $(GATEWAY_URL)/ready | jq . || curl -s $(GATEWAY_URL)/ready
 
 # ─── Tenant management ─────────────────────────────────────────────────────
 
+# Seeding runs on the host against the bind-mounted tenant DB (./tenants/),
+# so it works whether or not the gateway container is running.
 .PHONY: tenants-seed
 tenants-seed:
-	$(COMPOSE) exec gateway python -m scripts.seed_tenants
+	cd llm/gateway && TENANT_DB_PATH=$(CURDIR)/tenants/tenants.db \
+		poetry run python $(CURDIR)/scripts/seed-tenants.py
 
 .PHONY: tenants-list
 tenants-list:
-	$(COMPOSE) exec gateway basic-infra tenant list
+	$(COMPOSE) exec gateway python -m app.tenancy.cli tenant list
 
 # ─── Tests & lint ──────────────────────────────────────────────────────────
 

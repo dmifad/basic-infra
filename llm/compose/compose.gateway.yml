@@ -1,0 +1,37 @@
+# LLM gateway — the FastAPI service (ADR-0002, ADR-0003).
+#
+# Published on 127.0.0.1 only (ADR-0003 — Bearer auth in plain HTTP is only
+# safe on localhost). The host port is GATEWAY_HOST_PORT (default 8003); it is
+# overridable so basic-infra can coexist with another service on 8003.
+#
+# Paths are relative to this file (llm/compose/).
+services:
+  gateway:
+    profiles: ["basic"]
+    build:
+      context: ../gateway
+    container_name: basic-infra-gateway
+    restart: unless-stopped
+    # Run as the host user so the bind-mounted tenant DB stays host-writable
+    # (lets `make tenants-seed` run from the host). Defaults to uid/gid 1000.
+    user: "${GATEWAY_UID:-1000}:${GATEWAY_GID:-1000}"
+    environment:
+      TZ: Europe/Moscow
+      GATEWAY_HOST: 0.0.0.0
+      GATEWAY_PORT: "8003"
+      GATEWAY_LOG_LEVEL: ${GATEWAY_LOG_LEVEL:-INFO}
+      GATEWAY_LOG_FORMAT: ${GATEWAY_LOG_FORMAT:-json}
+      TENANT_DB_PATH: /data/tenants/tenants.db
+      REDIS_URL: redis://redis:6379/0
+      RATE_LIMIT_FAIL_OPEN: "true"
+      BACKENDS_CONFIG: /app/backends.yaml
+      BACKEND_HEALTH_INTERVAL_SECONDS: "30"
+      BACKEND_UNHEALTHY_THRESHOLD: "3"
+    ports:
+      - "127.0.0.1:${GATEWAY_HOST_PORT:-8003}:8003"
+    volumes:
+      - ../../tenants:/data/tenants
+      - ../backends.yaml:/app/backends.yaml:ro
+    depends_on:
+      redis:
+        condition: service_healthy

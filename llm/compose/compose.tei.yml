@@ -1,0 +1,26 @@
+# TEI (Text Embeddings Inference) — embedding + rerank backends (ADR-0005).
+#
+# Both run in the llm-cpu and llm-gpu profiles. Weights are downloaded once
+# into the shared hf-cache (bind-mounted from the host) and reused thereafter.
+services:
+  tei-embed:
+    profiles: ["llm-cpu", "llm-gpu"]
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    container_name: basic-infra-tei-embed
+    restart: unless-stopped
+    command: ["--model-id", "BAAI/bge-m3", "--port", "80"]
+    environment:
+      HF_HOME: /data
+    volumes:
+      - ${LLM_MODELS_DIR:-/home/vams/llm-models}/hf-cache:/data
+
+  tei-rerank:
+    profiles: ["llm-cpu", "llm-gpu"]
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    container_name: basic-infra-tei-rerank
+    restart: unless-stopped
+    command: ["--model-id", "BAAI/bge-reranker-v2-m3", "--port", "80"]
+    environment:
+      HF_HOME: /data
+    volumes:
+      - ${LLM_MODELS_DIR:-/home/vams/llm-models}/hf-cache:/data

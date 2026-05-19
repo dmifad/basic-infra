@@ -1,0 +1,13 @@
+# Redis — token-bucket store for per-tenant rate limiting (ADR-0003).
+# Internal to the compose network; never published on the host.
+services:
+  redis:
+    profiles: ["basic"]
+    image: redis:7-alpine
+    container_name: basic-infra-redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
