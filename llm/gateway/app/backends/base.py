@@ -15,6 +15,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from ..schemas.chat import ChatCompletionRequest, ChatCompletionResponse
+from ..schemas.embeddings import EmbeddingRequest, EmbeddingResponse
+from ..schemas.rerank import RerankRequest, RerankResponse
+
 
 @dataclass(frozen=True)
 class BackendModel:
@@ -43,10 +47,10 @@ class BackendAdapter(ABC):
     @abstractmethod
     async def chat_completion(
         self,
-        request,                     # ChatCompletionRequest from schemas/chat.py
+        request: ChatCompletionRequest,
         model: BackendModel,
-    ):                               # ChatCompletionResponse
-        """Translate and forward chat completion request to backend.
+    ) -> ChatCompletionResponse:
+        """Translate and forward a chat completion request to the backend.
 
         Implementations:
             - Map request.model from platform ID to model.backend_model_name
@@ -56,10 +60,20 @@ class BackendAdapter(ABC):
         """
 
     @abstractmethod
-    async def embedding(self, request, model: BackendModel): ...
+    async def embedding(
+        self,
+        request: EmbeddingRequest,
+        model: BackendModel,
+    ) -> EmbeddingResponse:
+        """Translate and forward an embedding request to the backend."""
 
     @abstractmethod
-    async def rerank(self, request, model: BackendModel): ...
+    async def rerank(
+        self,
+        request: RerankRequest,
+        model: BackendModel,
+    ) -> RerankResponse:
+        """Translate and forward a rerank request to the backend."""
 
     @abstractmethod
     async def health(self) -> bool:

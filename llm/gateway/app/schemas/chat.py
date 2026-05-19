@@ -7,8 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
-
+from pydantic import BaseModel, ConfigDict, Field
 
 # ─── Messages ──────────────────────────────────────────────────────────────
 
@@ -21,8 +20,16 @@ class ChatMessage(BaseModel):
 # ─── Response format (structured output) ───────────────────────────────────
 
 class JsonSchemaSpec(BaseModel):
+    """A named JSON Schema the model output must conform to.
+
+    The wire field is ``schema`` (OpenAI naming, per docs/api/openapi.yaml); the
+    Python attribute is ``json_schema_def`` to avoid shadowing ``BaseModel.schema``.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
     name: str
-    schema: dict[str, Any]
+    json_schema_def: dict[str, Any] = Field(alias="schema")
     strict: bool = True
     description: str | None = None
 

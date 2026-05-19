@@ -18,6 +18,7 @@ redis = "^5.0"
 pyyaml = "^6.0"
 typer = "^0.12"
 argon2-cffi = "^23.1"
+click = ">=8.1,<8.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3"
@@ -29,7 +30,7 @@ mypy = "^1.11"
 respx = "^0.21"   # httpx mock
 
 [tool.poetry.scripts]
-basic-infra = "llm.gateway.app.tenancy.cli:app"
+basic-infra = "app.tenancy.cli:app"
 
 [build-system]
 requires = ["poetry-core"]
@@ -43,6 +44,10 @@ target-version = "py312"
 select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "SIM"]
 ignore = ["E501"]
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection markers are designed to live in arg defaults.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Header", "fastapi.Query"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
@@ -50,8 +55,15 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 disallow_untyped_decorators = false
 
+[[tool.mypy.overrides]]
+# Dependencies without bundled type stubs.
+module = ["testcontainers.*", "yaml"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]
 markers = [
     "live: requires live backends (skipped by default)",
 ]

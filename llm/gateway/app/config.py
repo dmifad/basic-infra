@@ -4,9 +4,9 @@ All env vars documented in .env.example at repo root.
 """
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,11 +38,11 @@ class Settings(BaseSettings):
     backend_request_timeout_seconds: int = 900
 
 
-# Module-level singleton (created on import — keep import side-effect-free)
-# Use `from .config import get_settings; settings = get_settings()` in code paths.
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Returns cached settings instance.
+    """Return the process-wide cached :class:`Settings` instance.
 
-    TODO(week4-phase-3): add @lru_cache decoration.
+    Cached so env parsing happens once. Tests that need a different config
+    construct :class:`Settings` directly and pass it to ``create_app``.
     """
     return Settings()
