@@ -4,7 +4,16 @@
 # safe on localhost). The host port is GATEWAY_HOST_PORT (default 8003); it is
 # overridable so basic-infra can coexist with another service on 8003.
 #
+# The gateway also joins the external `basic-infra-net` network so co-located
+# client projects (telcoss, pamyat-naroda) can reach it container-to-container
+# as `basic-infra-gateway:8003` — no host port, no loopback-binding conflict.
+# Create the network once:  docker network create basic-infra-net
+#
 # Paths are relative to this file (llm/compose/).
+networks:
+  basic-infra-net:
+    external: true
+
 services:
   gateway:
     profiles: ["basic"]
@@ -35,3 +44,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    networks:
+      - default
+      - basic-infra-net
