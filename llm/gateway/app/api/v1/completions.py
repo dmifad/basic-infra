@@ -1,12 +1,9 @@
-"""``POST /v1/completions`` route — legacy text completions.
-
-Phase 3 wires auth, rate limiting and validation; dispatch lands in Phase 4.
-"""
+"""``POST /v1/completions`` route — legacy text completions."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
-from ...exceptions import ModelNotFoundError
+from ...routing.router import Router
 from ...schemas.completions import CompletionRequest, CompletionResponse
 from ...tenancy.store import TenantRecord
 from ..deps import current_tenant, enforce_rate_limit
@@ -23,5 +20,7 @@ async def create_completion(
     """Create a legacy text completion (OpenAI-compatible)."""
     request.state.model = body.model
     await enforce_rate_limit(request, tenant, "completions")
-    # TODO(week4-phase-4): dispatch via the backend router.
-    raise ModelNotFoundError(f"Model not found: {body.model}")
+    gateway_router: Router = request.app.state.router
+    response = await gateway_router.completion(body, tenant)
+    request.state.backend = response.metadata.backend
+    return response

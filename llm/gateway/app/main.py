@@ -21,6 +21,9 @@ from .api.v1 import chat, completions, embeddings, models, rerank, tenants
 from .config import Settings, get_settings
 from .exceptions import GatewayError, InvalidRequestError, RateLimitError
 from .observability.logging import configure_logging, get_logger
+from .routing.health import HealthChecker
+from .routing.registry import Registry
+from .routing.router import Router
 from .schemas.errors import ErrorDetail, ErrorEnvelope
 from .tenancy.auth import Authenticator
 from .tenancy.ratelimit import RateLimiter
@@ -31,9 +34,10 @@ _log = get_logger("gateway")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Open the tenant store, authenticator and rate limiter; close them on exit.
+    """Open all platform resources for the app's lifetime, close them on exit.
 
-    The backend registry and health checker are wired in Phase 4.
+    Brings up: tenant store, authenticator, rate limiter, backend registry +
+    router, and the background health checker.
     """
     settings: Settings = app.state.settings
     store = TenantStore(settings.tenant_db_path)
@@ -42,10 +46,28 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.rate_limiter = RateLimiter(
         settings.redis_url, fail_open=settings.rate_limit_fail_open
     )
-    _log.info("gateway_startup", tenant_db=str(settings.tenant_db_path))
+
+    registry = Registry.load(settings.backends_config)
+    app.state.registry = registry
+    app.state.router = Router(registry)
+    health_checker = HealthChecker(
+        registry,
+        interval_seconds=settings.backend_health_interval_seconds,
+        unhealthy_threshold=settings.backend_unhealthy_threshold,
+    )
+    app.state.health_checker = health_checker
+    await health_checker.start()
+
+    _log.info(
+        "gateway_startup",
+        tenant_db=str(settings.tenant_db_path),
+        backends=len(registry.adapters),
+    )
     try:
         yield
     finally:
+        await health_checker.stop()
+        await registry.aclose()
         await app.state.rate_limiter.close()
         store.close()
         _log.info("gateway_shutdown")
@@ -90,12 +112,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/ready", tags=["ops"])
     async def ready() -> Response:
-        """Readiness — 200 only when every backend is healthy.
+        """Readiness — 200 only when every registered backend is healthy.
 
-        Phase 3 has no backend registry, so readiness is trivially true with an
-        empty backend list. Phase 4 wires real per-backend health here.
+        With no backends registered the gateway is trivially ready.
         """
-        return JSONResponse(status_code=200, content={"ready": True, "backends": []})
+        registry: Registry = app.state.registry
+        adapters = registry.adapters
+        backends = [
+            {
+                "name": adapter.name,
+                "healthy": adapter.is_healthy,
+                "consecutive_failures": adapter.consecutive_failures,
+                "last_checked": (
+                    adapter.last_checked.isoformat() if adapter.last_checked else None
+                ),
+            }
+            for adapter in adapters
+        ]
+        all_ok = all(adapter.is_healthy for adapter in adapters)
+        return JSONResponse(
+            status_code=200 if all_ok else 503,
+            content={"ready": all_ok, "backends": backends},
+        )
 
     @app.exception_handler(GatewayError)
     async def _on_gateway_error(request: Request, exc: GatewayError) -> JSONResponse:
