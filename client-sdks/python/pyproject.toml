@@ -8,7 +8,7 @@ packages = [{include = "vams_llm_client"}]
 
 [tool.poetry.dependencies]
 python = "^3.12"
-httpx = "^0.27"
+httpx = ">=0.27,<1.0"
 pydantic = "^2.7"
 # Optional cloud-provider deps — install via extras
 openai = { version = "^1.50", optional = true }
