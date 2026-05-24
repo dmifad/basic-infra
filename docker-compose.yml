@@ -22,3 +22,4 @@ include:
   - llm/compose/compose.gateway.yml
   - llm/compose/compose.llama-cpp.yml
   - llm/compose/compose.tei.yml
+  - storage/compose/minio.yml

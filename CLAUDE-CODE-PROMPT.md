@@ -1,126 +1,157 @@
-# Claude Code Prompt — Week 4 — basic-infra LLM platform
+# CLAUDE-CODE-PROMPT — Week 6 (basic-infra storage layer)
 
-Hi Claude Code. You're starting a **new repository** this time: `basic-infra` — a shared infrastructure platform extracted from two existing projects (`telcoss` and `pamyat-naroda-graph`). Week 4 scope: the **LLM layer** only (generation, embeddings, reranking, multi-tenancy). Storage and observability layers are deferred to Weeks 5–7.
+You are operating in `~/basic-infra/` on branch `week6-storage-layer`.
+Week 6 introduces a storage layer (BlobStorePort + MinIO/S3/filesystem
+adapters + SDK). The skeleton has been unpacked into the working tree.
+Your job is to land it cleanly into the existing repo conventions.
 
-This is NOT a continuation of telcoss Week 3. Telcoss is "done" (PR #3 self-review). The work here is in `~/basic-infra/` (new), with `~/telcoss/` and `~/PAMYAT-NARODA-GRAPH/` as **clients** of this platform after migration.
+**Read first, in order:**
 
-## Read first (in this exact order)
+1. `CLAUDE.md` — platform invariants. **Do not violate them.**
+2. `docs/architecture/bridge-v11.md` — full ecosystem state. Note: ADR-0009
+   gate is OPEN; `migrate-to-basic-infra → main` is blocked; do not touch
+   `llm/` or `telcoss/compliance/`.
+3. `docs/adr/0010-storage-abstraction.md` — the decision you are landing.
+4. `docs/runbooks/pdf-intake-storage-migration.md` — migration plan.
+   **Not executed in this session.** Phase 1 (pdf-intake adoption) is a
+   separate session in a separate repo.
 
-1. `docs/adr/0001-platform-charter.md` — scope, what we are and aren't
-2. `docs/adr/0002-api-contract.md` — OpenAI-compatible + Cohere-style rerank + extensions
-3. `docs/adr/0003-multi-tenancy.md` — tenants, auth, rate limits
-4. `docs/adr/0004-provider-switching.md` — client-side provider abstraction
-5. `docs/adr/0005-backend-pluggability.md` — platform-side backend dispatch
-6. `docs/specs/llm-platform-spec.md` — the complete implementation contract
-7. `docs/specs/week-4-tasklist.md` — your phased work plan
+**Hard rules for this session:**
 
-## What Week 4 produces
-
-A new `basic-infra` repo with:
-
-| Layer                  | Path                                  | Purpose                                          |
-| ---------------------- | ------------------------------------- | ------------------------------------------------ |
-| Gateway                | `llm/gateway/`                        | FastAPI, OpenAI-compatible, multi-tenant         |
-| Backend adapters       | `llm/gateway/app/backends/`           | llama.cpp, TEI embed, TEI rerank, anthropic stub |
-| Backend registry       | `llm/backends.yaml`                   | model→backend routing config                     |
-| Tenant store           | `llm/gateway/app/tenancy/`            | SQLite + Redis rate limit                        |
-| Compose stack          | `llm/compose/`, root `docker-compose` | gateway + Redis + llama-cpp + TEI                |
-| Python client SDK      | `client-sdks/python/vams_llm_client/` | provider-agnostic client                         |
-| Scripts                | `scripts/`                            | model migration, tenant seed                     |
-| Documentation          | `docs/`                               | ADRs, OpenAPI spec, runbooks                     |
-
-By end of Week 4, both `telcoss` and `pamyat-naroda-graph` consume the platform as clients. Telcoss's PR #3 LLM-task is closed via real extraction.
-
-## Operating principles (carry-over from prior weeks)
-
-- **Clean layering** — `gateway/app/api` (HTTP) → `routing` (dispatch) → `backends` (adapters) → external HTTP. No layer skipping.
-- **Pydantic v2 schemas** as the single source of truth for request/response shapes. Match `docs/api/openapi.yaml` exactly.
-- **Structured logging** with structlog throughout. Every request line includes `tenant_id`, `request_id`, `model`, `backend`, `duration_ms`, `status`.
-- **Tests at three levels**: unit (schemas, store logic, adapter translation), integration (testcontainers — real Redis, real SQLite, fake backend FastAPI), e2e (against live backends; marked `@pytest.mark.live`).
-- **ruff + mypy-strict** must pass. `pyproject.toml` in each Python package configures both.
-- **Docstrings on public functions** explain the contract, not the implementation.
-
-## What you should NOT do
-
-- **Do not invent endpoints** outside `docs/api/openapi.yaml`. If the spec is wrong, fix the spec FIRST, then write code.
-- **Do not put domain logic into the platform.** No telecom-specific behavior, no genealogy-specific behavior. If you're tempted, it belongs in a client project, not here.
-- **Do not bypass adapter ABCs.** Every backend implements `BackendAdapter`. No direct HTTP from API layer to backend.
-- **Do not store prompts.** Prompts are client business logic. The platform is content-agnostic.
-- **Do not build streaming, tools/function-calling, or multimodal in v1.** Out of scope per ADR-0002.
-- **Do not bind to 0.0.0.0 on the host.** Inside containers fine; on the host, `127.0.0.1:8003:8003` only. Auth is Bearer-token in plain HTTP — only safe on localhost.
-- **Do not delete or modify `~/PAMYAT-NARODA-GRAPH/` until Phase 6.** Phase 2 only sets up symlinks; pamyat must keep working through Phases 1–5.
-
-## Tasklist execution order
-
-Strictly follow `docs/specs/week-4-tasklist.md`. Phases:
-
-1. **Bootstrap** (manual review)
-2. **Model migration** (manual — file system surgery)
-3. **Gateway core** (`/goal-friendly` — template-heavy code)
-4. **Backend adapters & router** (`/goal-friendly`)
-5. **Live compose stack** (manual — first real bring-up)
-6. **Client SDK + pamyat-naroda migration** (manual — irreversible)
-7. **Telcoss migration + close PR #3 LLM-task** (manual)
-8. **Cleanup, docs, bridge v8** (`/goal-friendly`)
-
-For phases marked `/goal-friendly`, you may use `/goal` + auto mode. The success criteria for each are listed at the end of the phase section in the tasklist. For manual phases, commit after each significant step and pause for review.
-
-## Quality bar
-
-- Type hints on every public function. No `Any` without `# type: ignore[<reason>]` explaining why.
-- Tests for every adapter, every use case, every API route. Minimum: happy path + one failure path.
-- Migrations of model files (Phase 2) are reversible via symlinks — pamyat-naroda must keep working at every commit.
-- OpenAPI spec validates with `openapi-spec-validator`. CI hook checks this.
-- Logs are structured JSON in production; pretty console in dev.
-
-## When you hit ambiguity
-
-1. Re-read the relevant ADR.
-2. Check `docs/specs/llm-platform-spec.md` for the precise contract.
-3. If still unclear — pick the more conservative option and leave a `# TODO(week4-review):` comment.
-4. Never invent behavior. If business logic is unclear, stop and flag it in the commit message.
-
-## Output per phase
-
-Each phase ends with:
-
-1. Code that meets the phase's success criteria
-2. Tests at the appropriate levels
-3. Commit with `[week4-phase-N]` prefix
-4. If it's a `/goal-friendly` phase — final summary printed; if it's manual — stop and wait for human "Продолжай".
-
-## End-of-Week-4 verification
-
-These must all return zero exit code before Week 4 is closed:
-
-```bash
-# basic-infra side
-cd ~/basic-infra
-make test-all                       # gateway + SDK unit + integration tests pass
-make lint                           # ruff + mypy-strict clean
-make up DEFAULT_PROFILE=llm-cpu     # stack comes up on CPU (works without GPU)
-make status                         # /ready returns 200, all backends healthy
-make tenants-seed                   # creates telcoss and pamyat-naroda; capture keys
-
-# Smoke tests with curl (using captured key)
-curl -H "Authorization: Bearer $TELCOSS_KEY" http://localhost:8003/v1/models | jq
-curl -H "Authorization: Bearer $TELCOSS_KEY" -X POST \
-  http://localhost:8003/v1/embeddings \
-  -d '{"model":"bge-m3","input":["test"]}' | jq '.data | length'   # → 1
-
-# pamyat-naroda side — must work as a client
-cd ~/PAMYAT-NARODA-GRAPH
-docker compose up -d                # no LLM services in compose anymore
-# (run pamyat's smoke tests — they should all pass against basic-infra)
-
-# telcoss side — close the LLM-task from PR #3
-cd ~/telcoss
-poetry run telcoss pdf-intake submit --file tests/fixtures/yurlovo-nss-rd.pdf
-# ... full pipeline through extract; assert ≥1 Manhole fact created
-```
-
-If all green — Week 4 is closed.
+- Do not commit anything. Do not push. Leave working copy ready for my review.
+- Do not modify `llm/` (frozen platform contract).
+- Do not modify `telcoss/*` (different repo, different session anyway).
+- Do not start phases 2-7 of the migration runbook.
+- If something looks ambiguous (e.g. existing `CLAUDE.md`, existing
+  `docker-compose.yml` topology, existing test conventions) — **stop and
+  ask me**, do not guess.
 
 ---
 
-Begin with Phase 1. Read the documents in the order above before writing any code. `bridge-v7.md` is attached as context for what state `telcoss` is in (Week 3 done, PR #3 in self-review) — that work is not part of Week 4 but it's a client downstream.
+## Phases
+
+Execute strictly in order. Phases marked `/goal-friendly` can be batched
+under one `/goal` invocation. Phases marked `manual` require pausing for my
+review or explicit go-ahead.
+
+### Phase 0 — Reconcile CLAUDE.md (manual)
+
+If `CLAUDE.md.before-week6` exists in the repo root (left by my apply step):
+
+- Diff it against the new `CLAUDE.md`.
+- If the old file has content not covered by the new one — propose a
+  merged version, show me the diff, **wait for my approval**.
+- If the old file is fully covered by the new one — delete the backup.
+
+If no `CLAUDE.md.before-week6` exists, skip this phase.
+
+### Phase 1 — Inventory (manual)
+
+Print:
+
+- `git status --short` for the whole repo.
+- `find storage sdk -type f | sort` — what was unpacked.
+- Current `pyproject.toml` (or equivalent dep manifest) location and
+  format (poetry / hatch / setuptools / uv / ...).
+- Current `docker-compose.yml` top-level structure: services list, any
+  `include:` directives, any compose-profile pattern in `llm/compose/*.yml`.
+- Current test runner: pytest config location, any markers convention
+  (`@pytest.mark.integration` etc.).
+- Current linter/formatter config: ruff, mypy, black, isort.
+
+Stop. Show me the inventory. **Wait for my "go" before phase 2.**
+
+### Phase 2 — Dependency wiring (/goal-friendly)
+
+Add the storage dependencies to basic-infra's main dep manifest:
+
+- `aiobotocore>=2.12`
+- `aiofiles>=23.2`
+- `pydantic-settings>=2.2` (probably already present — verify)
+- `pydantic>=2.6` (probably already present — verify)
+
+Match the existing dep declaration style (poetry / hatch / etc.). Pin
+according to existing pinning convention.
+
+For the SDK (`sdk/basic_infra_storage_client/pyproject.toml`) — adjust
+the `packages` config in `[tool.hatch.build.targets.wheel]` if your
+build backend differs from hatch. The current entry uses `../../storage`
+which works only for hatch + editable install. If you use poetry, switch
+to whatever produces the equivalent layout.
+
+### Phase 3 — Lint / typecheck (/goal-friendly)
+
+Run the project's configured linter and typecheck on the new files:
+
+- `ruff check storage/ sdk/`
+- `mypy storage/ sdk/` (if mypy is configured)
+
+Fix violations. If a fix would change semantics (not just style) — flag
+it and ask before applying.
+
+### Phase 4 — Tests green (/goal-friendly)
+
+Run:
+
+```bash
+pytest storage/tests/ sdk/basic_infra_storage_client/tests/ -v
+```
+
+Expected: 14 + 3 = 17 passed. If anything is red — diagnose, do not paper over.
+
+### Phase 5 — Compose integration (manual)
+
+Wire `storage/compose/minio.yml` into the project's compose topology.
+
+- If basic-infra uses an `include:` directive at top level — add storage
+  compose to the include list.
+- If basic-infra uses per-component compose files invoked via `-f` flags
+  (like `llm/compose/*.yml` apparently does) — propose the analogous
+  pattern for storage. **Show me the proposed change before applying.**
+- Add an `.env.example` entry block:
+
+  ```
+  # Storage layer (Week 6)
+  BASIC_INFRA_STORAGE_BACKEND=minio
+  BASIC_INFRA_STORAGE_BUCKET=basic-infra-dev
+  BASIC_INFRA_STORAGE_ENDPOINT_URL=http://minio:9000
+  BASIC_INFRA_STORAGE_ACCESS_KEY=minioadmin
+  BASIC_INFRA_STORAGE_SECRET_KEY=minioadmin
+  ```
+
+  Match the existing `.env.example` style.
+
+Do not start MinIO yet. Just wire the config.
+
+### Phase 6 — Live MinIO smoke (manual, optional)
+
+Only if I explicitly say "do the smoke".
+
+```bash
+docker compose --profile storage up -d
+docker compose logs minio-init   # bucket should be created
+```
+
+Then run a one-shot script that does: put → head → get → list →
+presigned_url GET → download via httpx → delete. All steps should pass.
+Tear down with `docker compose --profile storage down`.
+
+### Phase 7 — Review prep (manual)
+
+- Print `git diff --stat` — summary of changes.
+- Print full diff for `docker-compose.yml`, `.env.example`, and any other
+  cross-cutting files you touched.
+- Print TODO list: anything you decided to defer, anything that needs my
+  attention, any rough edges in the code.
+- **Do not commit. Stop.**
+
+---
+
+## Reference
+
+- ADR-0010 — `docs/adr/0010-storage-abstraction.md`
+- Migration runbook — `docs/runbooks/pdf-intake-storage-migration.md`
+- Ecosystem bridge — `docs/architecture/bridge-v11.md`
+- Slash commands — `.claude/commands/verify-storage.md`,
+  `.claude/commands/storage-status.md`
+- Tasklist (this session) — `tasklist.md`

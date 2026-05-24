@@ -1,0 +1,61 @@
+# MinIO storage profile для basic-infra.
+#
+# Включается через `docker compose --profile storage up`.
+# Создаёт два сервиса:
+#
+# - minio        — S3-совместимый объектный store
+# - minio-init   — one-shot контейнер, создающий default bucket
+#                  и применяющий минимальную политику lifecycle.
+#
+# Production использует AWS S3 (никаких MinIO-контейнеров), конфигурация
+# адаптера переключается через BASIC_INFRA_STORAGE_BACKEND=s3.
+
+services:
+  minio:
+    image: minio/minio:RELEASE.2025-01-20T14-49-07Z
+    profiles: ["storage", "all"]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${BASIC_INFRA_STORAGE_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${BASIC_INFRA_STORAGE_SECRET_KEY:-minioadmin}
+      MINIO_BROWSER_REDIRECT_URL: ${MINIO_BROWSER_REDIRECT_URL:-http://localhost:9001}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - basic-infra-net
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-01-17T23-25-50Z
+    profiles: ["storage", "all"]
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      BUCKET: ${BASIC_INFRA_STORAGE_BUCKET:-basic-infra-dev}
+      ACCESS_KEY: ${BASIC_INFRA_STORAGE_ACCESS_KEY:-minioadmin}
+      SECRET_KEY: ${BASIC_INFRA_STORAGE_SECRET_KEY:-minioadmin}
+    entrypoint: >
+      /bin/sh -c "
+      set -e;
+      mc alias set local http://minio:9000 \"$$ACCESS_KEY\" \"$$SECRET_KEY\";
+      mc mb --ignore-existing local/\"$$BUCKET\";
+      echo 'Bucket' \"$$BUCKET\" 'ready';
+      "
+    networks:
+      - basic-infra-net
+
+volumes:
+  minio_data:
+
+networks:
+  basic-infra-net:
+    external: true

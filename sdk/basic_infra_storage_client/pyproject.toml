@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "basic-infra-storage-client"
+version = "0.1.0"
+description = "SDK для хранилища блобов basic-infra (MinIO/S3/filesystem)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "basic-infra maintainers" }]
+
+dependencies = [
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "aiobotocore>=2.12",
+    "aiofiles>=23.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "moto[s3,server]>=5.0",
+    "ruff>=0.4",
+    "mypy>=1.8",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["basic_infra_storage_client"]
+
+# Порты и адаптеры тоже включаются в SDK, потому что AsyncBlobStoreClient
+# импортирует их напрямую. Альтернатива — отдельный пакет
+# `basic-infra-storage-core`, но это overkill для текущего масштаба.
+# `packages = ["../../storage"]` не работает: hatchling запрещает
+# parent-relative пути. force-include копирует внешний каталог в wheel как
+# пакет `storage`. (Editable-install внешнего каталога hatchling не
+# поддерживает — для локальной разработки storage кладётся на PYTHONPATH.)
+[tool.hatch.build.targets.wheel.force-include]
+"../../storage" = "storage"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: requires an out-of-process backend (moto server / testcontainers)",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+[[tool.mypy.overrides]]
+# Dependencies without bundled type stubs.
+module = ["aiobotocore.*", "botocore.*", "aiofiles", "aiofiles.*"]
+ignore_missing_imports = true
