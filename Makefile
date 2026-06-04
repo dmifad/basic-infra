@@ -21,9 +21,13 @@ help:
 	@echo "  make status                        check /ready"
 	@echo "  make tenants-seed                  create telcoss + pamyat-naroda"
 	@echo "  make tenants-list                  list all tenants"
-	@echo "  make test                          run gateway tests"
-	@echo "  make test-sdk                      run SDK tests"
-	@echo "  make lint                          ruff + mypy on gateway + SDK"
+	@echo "  make test                          run platform tests (storage + SDKs + observability)"
+	@echo "  make test-integration              run integration tests (-m integration, moto S3)"
+	@echo "  make lint                          ruff over storage/ sdk/ observability/"
+	@echo "  make typecheck                     mypy over storage/ + SDK packages"
+	@echo "  make test-gateway                  run LLM gateway tests (poetry)"
+	@echo "  make test-sdk                      run vams_llm_client SDK tests (poetry)"
+	@echo "  make lint-gateway                  ruff + mypy on gateway + vams SDK (poetry)"
 	@echo "  make models-migrate                migrate models from pamyat-naroda"
 	@echo "  make build                         rebuild gateway image"
 
@@ -77,10 +81,43 @@ tenants-seed:
 tenants-list:
 	$(COMPOSE) exec gateway python -m app.tenancy.cli tenant list
 
-# ─── Tests & lint ──────────────────────────────────────────────────────────
+# ─── Tests & lint (platform layers: storage + SDKs + observability) ─────────
 
+VENV            ?= .venv
+PYTEST          := $(VENV)/bin/pytest
+RUFF            := $(VENV)/bin/ruff
+MYPY            := $(VENV)/bin/mypy
+LINT_PATHS      := storage sdk observability
+TYPECHECK_PATHS := storage \
+                   sdk/basic_infra_storage_client/basic_infra_storage_client \
+                   sdk/basic_infra_observability_client/basic_infra_observability_client
+
+.PHONY: dev-install
+dev-install:
+	$(VENV)/bin/pip install -e ".[dev]"
+
+# Platform-wide tests, run from the existing .venv. No PYTHONPATH prefix
+# (resolution comes from root pyproject pythonpath). Integration excluded here.
 .PHONY: test
 test:
+	$(PYTEST) -m "not integration"
+
+.PHONY: test-integration
+test-integration:
+	$(PYTEST) -m integration
+
+.PHONY: lint
+lint:
+	$(RUFF) check $(LINT_PATHS)
+
+.PHONY: typecheck
+typecheck:
+	$(MYPY) $(TYPECHECK_PATHS)
+
+# ─── Tests & lint (LLM gateway / vams SDK: poetry toolchain) ────────────────
+
+.PHONY: test-gateway
+test-gateway:
 	cd llm/gateway && poetry run pytest
 
 .PHONY: test-sdk
@@ -88,10 +125,10 @@ test-sdk:
 	cd client-sdks/python && poetry run pytest
 
 .PHONY: test-all
-test-all: test test-sdk
+test-all: test test-gateway test-sdk
 
-.PHONY: lint
-lint:
+.PHONY: lint-gateway
+lint-gateway:
 	cd llm/gateway && poetry run ruff check . && poetry run mypy .
 	cd client-sdks/python && poetry run ruff check . && poetry run mypy .
 

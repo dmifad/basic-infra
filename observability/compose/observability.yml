@@ -1,0 +1,118 @@
+# Observability stack для basic-infra.
+#
+# Включается через `docker compose --profile observability up`.
+# Включает четыре сервиса: Prometheus, Loki, Promtail, Grafana.
+#
+# Production окружение использует те же образы и конфиги. HA, federation,
+# managed services — out of scope первой версии (см. ADR-0011 п. 3, A3).
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    profiles: ["observability", "all"]
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=14d"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      # Смещён с 9090: на vams-dev порт 9090 занят telcoss-prometheus
+      # (переходный период до cutover в Week 11 — см. ADR-0011).
+      # Bind на loopback, как делает telcoss (наружу не торчит).
+      - "127.0.0.1:${PROMETHEUS_PORT:-9190}:9090"
+    labels:
+      basic-infra.observability.logs: "false"   # не собираем логи Prometheus самого
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - basic-infra-net
+
+  loki:
+    image: grafana/loki:3.2.0
+    profiles: ["observability", "all"]
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ../loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+    ports:
+      # Смещён с 3100: занят telcoss-loki (переходный период, см. ADR-0011).
+      - "127.0.0.1:${LOKI_PORT:-3110}:3100"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - basic-infra-net
+
+  promtail:
+    image: grafana/promtail:3.2.0
+    profiles: ["observability", "all"]
+    command: ["-config.file=/etc/promtail/promtail.yml"]
+    volumes:
+      - ../promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - promtail_positions:/tmp
+    depends_on:
+      loki:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - basic-infra-net
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    profiles: ["observability", "all"]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      # Смещён с 3000: telcoss-grafana на 3001, берём 3002 чтобы не пересекаться.
+      - "127.0.0.1:${GRAFANA_PORT:-3002}:3000"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+    labels:
+      basic-infra.observability.logs: "true"
+      basic-infra.observability.service: "grafana"
+      basic-infra.observability.env: "${ENV:-dev}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - basic-infra-net
+
+volumes:
+  prometheus_data:
+  loki_data:
+  promtail_positions:
+  grafana_data:
+
+networks:
+  basic-infra-net:
+    external: true

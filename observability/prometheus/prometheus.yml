@@ -1,0 +1,70 @@
+# Prometheus scrape config для basic-infra observability stack.
+#
+# Принципы:
+# - Pull-based, /metrics на каждом сервисе.
+# - Стандартные лейблы (service, env, tenant) добавляются сервисами через
+#   prometheus_client, не через relabel в Prometheus.
+# - Docker SD используется для автодискавери сервисов в compose-сети.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    # env НЕ задаётся на уровне Prometheus — он приходит per-service через
+    # SDK-лейблы (ADR-0011). Cluster-level external_labels.env убран до
+    # появления HA/federation (тогда вернётся как discriminator кластера).
+    cluster: basic-infra
+
+scrape_configs:
+  # Платформенные компоненты ---------------------------------------
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+        labels:
+          service: prometheus
+
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+        labels:
+          service: loki
+
+  - job_name: grafana
+    static_configs:
+      - targets: ["grafana:3000"]
+        labels:
+          service: grafana
+
+  - job_name: promtail
+    static_configs:
+      - targets: ["promtail:9080"]
+        labels:
+          service: promtail
+
+  # LLM gateway (если экспонирует /metrics — см. llm/ contract) -----
+  # Закомментировано до тех пор, пока LLM gateway не адаптирован.
+  # Раскомментируется в applied track (Week 11).
+  #
+  # - job_name: llm-gateway
+  #   static_configs:
+  #     - targets: ["llm-gateway:8080"]
+  #       labels:
+  #         service: llm-gateway
+
+  # Прикладные сервисы (telcoss и другие клиенты) -------------------
+  # Адаптация — Week 11. До тех пор — Docker SD выключен.
+  #
+  # - job_name: docker-services
+  #   docker_sd_configs:
+  #     - host: unix:///var/run/docker.sock
+  #       filters:
+  #         - name: label
+  #           values: ["basic-infra.observability.scrape=true"]
+  #   relabel_configs:
+  #     - source_labels: [__meta_docker_container_label_basic_infra_observability_service]
+  #       target_label: service
+  #     - source_labels: [__meta_docker_container_label_basic_infra_observability_port]
+  #       regex: (.+)
+  #       target_label: __address__
+  #       replacement: ${1}

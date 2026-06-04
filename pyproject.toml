@@ -1,0 +1,78 @@
+# basic-infra — root dev/test environment.
+#
+# NOT a distributable package: this manifest exists to (a) declare the dev
+# toolchain for the platform layers (storage + observability) and (b) host the
+# repo-wide pytest / ruff / mypy config that was missing through Week 6.
+# Per-component SDKs keep their own pyproject.toml for packaging; this one is
+# only ever installed editable into the local .venv.
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "basic-infra-dev"
+version = "0.0.0"
+description = "Root dev/test environment for basic-infra (not distributed)."
+requires-python = ">=3.11"
+
+# Runtime deps of the platform layers live here so an editable dev install
+# pulls a coherent set; pure tooling goes in the dev extra.
+dependencies = [
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "aiobotocore>=2.12",
+    "aiofiles>=23.2",
+    "structlog>=24.1",
+    "prometheus-client>=0.20",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "moto[s3]>=5.0",
+    "ruff>=0.4",
+    "mypy>=1.8",
+]
+
+# No importable code at the repo root.
+[tool.setuptools]
+py-modules = []
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+# Both SDK tests/ dirs resolve to the top-level package name `tests` (their
+# parents have no __init__.py), which collides under the default prepend import
+# mode. importlib mode imports each test module by path, avoiding the clash —
+# and needs no edits to the frozen storage-SDK test package.
+addopts = "--import-mode=importlib"
+testpaths = [
+    "storage/tests",
+    "sdk/basic_infra_storage_client/tests",
+    "sdk/basic_infra_observability_client/tests",
+]
+# Resolve `storage.*` and both SDK packages with no PYTHONPATH prefix.
+# (Editable-installing the storage SDK is unsupported — hatchling force-includes
+# ../../storage — so source imports go through pythonpath, per Week 6's note.)
+pythonpath = [
+    ".",
+    "sdk/basic_infra_storage_client",
+    "sdk/basic_infra_observability_client",
+]
+markers = [
+    "integration: requires an out-of-process backend (moto / testcontainers / live observability stack)",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "sdk/basic_infra_storage_client:sdk/basic_infra_observability_client:."
+
+[[tool.mypy.overrides]]
+# Dependencies without bundled type stubs (mirrors the storage SDK config).
+module = ["aiobotocore.*", "botocore.*", "aiofiles", "aiofiles.*"]
+ignore_missing_imports = true
