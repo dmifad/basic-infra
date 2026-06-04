@@ -24,3 +24,4 @@ include:
   - llm/compose/compose.tei.yml
   - storage/compose/minio.yml
   - observability/compose/observability.yml
+  - postgres/compose/postgres.yml

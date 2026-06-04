@@ -87,10 +87,12 @@ VENV            ?= .venv
 PYTEST          := $(VENV)/bin/pytest
 RUFF            := $(VENV)/bin/ruff
 MYPY            := $(VENV)/bin/mypy
-LINT_PATHS      := storage sdk observability
+LINT_PATHS      := storage sdk observability postgres
 TYPECHECK_PATHS := storage \
                    sdk/basic_infra_storage_client/basic_infra_storage_client \
-                   sdk/basic_infra_observability_client/basic_infra_observability_client
+                   sdk/basic_infra_observability_client/basic_infra_observability_client \
+                   postgres \
+                   sdk/basic_infra_postgres_client/basic_infra_postgres_client
 
 .PHONY: dev-install
 dev-install:
@@ -131,6 +133,26 @@ test-all: test test-gateway test-sdk
 lint-gateway:
 	cd llm/gateway && poetry run ruff check . && poetry run mypy .
 	cd client-sdks/python && poetry run ruff check . && poetry run mypy .
+
+# ─── postgres-multi (ADR-0013) ──────────────────────────────────────────────
+
+.PHONY: up-postgres
+up-postgres:  ## поднять только postgres-multi (PostGIS на 127.0.0.1:5434)
+	docker compose up -d postgres-multi
+
+.PHONY: down-postgres
+down-postgres:  ## остановить postgres-multi
+	docker compose stop postgres-multi && docker compose rm -f postgres-multi
+
+.PHONY: provision
+provision:  ## provision tenant: make provision TENANT=telcoss
+	@test -n "$(TENANT)" || (echo "TENANT не задан: make provision TENANT=<name>" && exit 1)
+	PYTHONPATH=. $(VENV)/bin/python -m postgres.cli provision $(TENANT)
+
+.PHONY: deprovision
+deprovision:  ## ОПАСНО: drop tenant БД: make deprovision TENANT=telcoss
+	@test -n "$(TENANT)" || (echo "TENANT не задан" && exit 1)
+	PYTHONPATH=. $(VENV)/bin/python -m postgres.cli deprovision $(TENANT)
 
 # ─── Operational ────────────────────────────────────────────────────────────
 

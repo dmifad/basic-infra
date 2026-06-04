@@ -50,6 +50,7 @@ testpaths = [
     "storage/tests",
     "sdk/basic_infra_storage_client/tests",
     "sdk/basic_infra_observability_client/tests",
+    "sdk/basic_infra_postgres_client/tests",
 ]
 # Resolve `storage.*` and both SDK packages with no PYTHONPATH prefix.
 # (Editable-installing the storage SDK is unsupported — hatchling force-includes
@@ -58,6 +59,7 @@ pythonpath = [
     ".",
     "sdk/basic_infra_storage_client",
     "sdk/basic_infra_observability_client",
+    "sdk/basic_infra_postgres_client",
 ]
 markers = [
     "integration: requires an out-of-process backend (moto / testcontainers / live observability stack)",
@@ -70,7 +72,7 @@ target-version = "py311"
 [tool.mypy]
 python_version = "3.11"
 strict = true
-mypy_path = "sdk/basic_infra_storage_client:sdk/basic_infra_observability_client:."
+mypy_path = "sdk/basic_infra_storage_client:sdk/basic_infra_observability_client:sdk/basic_infra_postgres_client:."
 
 [[tool.mypy.overrides]]
 # Dependencies without bundled type stubs (mirrors the storage SDK config).
