@@ -128,6 +128,15 @@ Bridge документы (`docs/architecture/bridge-vN.md`) описывают 
   Интеграционные — через testcontainers или moto, помечать
   `@pytest.mark.integration`.
 - **Compose сеть** называется `basic-infra-net` (не `basic-infra`).
+- **Compose `include`-фрагменты резолвят относительные пути от каталога
+  фрагмента, не от корня репо.** Поэтому в `tracing/compose/tracing.yml`
+  bind пишется `./tempo/tempo.yaml`, а в `postgres/compose/postgres.yml` —
+  `../init`. Bind-источник ОБЯЗАН начинаться с `./` или `../`: голый путь
+  (`tracing/compose/tempo/tempo.yaml`) трактуется как имя **named volume** →
+  `service "..." refers to undefined volume ... : invalid compose project`.
+  `docker compose config -q` это НЕ ловит — нужен полный `docker compose
+  config` (резолвит и показывает абсолютный `source:`, который должен
+  существовать на диске).
 - **Russian-language домен в клиентских проектах НЕ трогать.** Extraction
   prompts в `telcoss/compliance/` написаны на русском намеренно (язык
   source documents). Это load-bearing.
