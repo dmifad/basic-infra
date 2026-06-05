@@ -100,3 +100,7 @@ class BlobStoreClient:
                 content_type=content_type,
             )
         )
+
+    def aclose(self) -> None:
+        """Закрыть backend (синхронная обёртка над ``AsyncBlobStoreClient.aclose``)."""
+        asyncio.run(self._async.aclose())

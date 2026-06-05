@@ -137,3 +137,11 @@ class AsyncBlobStoreClient:
             ttl_seconds=ttl_seconds,
             content_type=content_type,
         )
+
+    async def aclose(self) -> None:
+        """Закрыть backend (сетевые клиенты, пулы соединений).
+
+        Вызывать на shutdown приложения — например из FastAPI lifespan.
+        Для filesystem-backend — no-op.
+        """
+        await self._backend.aclose()

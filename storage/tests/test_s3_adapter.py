@@ -50,7 +50,7 @@ def moto_endpoint() -> Iterator[str]:
 
 
 @pytest_asyncio.fixture
-async def s3_adapter(moto_endpoint: str) -> MinioAdapter:
+async def s3_adapter(moto_endpoint: str) -> AsyncIterator[MinioAdapter]:
     # Сброс состояния moto между тестами + чистый bucket.
     httpx.post(f"{moto_endpoint}/moto-api/reset")
     session = AioSession()
@@ -62,12 +62,17 @@ async def s3_adapter(moto_endpoint: str) -> MinioAdapter:
         aws_secret_access_key=_CREDS["secret_key"],
     ) as client:
         await client.create_bucket(Bucket=_BUCKET)
-    return MinioAdapter(
+    adapter = MinioAdapter(
         endpoint_url=moto_endpoint,
         bucket=_BUCKET,
         access_key=_CREDS["access_key"],
         secret_key=_CREDS["secret_key"],
     )
+    try:
+        yield adapter
+    finally:
+        # Закрываем разделяемый клиент (Week 10 lifecycle fix).
+        await adapter.aclose()
 
 
 async def test_put_then_get_roundtrip_via_stream(s3_adapter: MinioAdapter) -> None:

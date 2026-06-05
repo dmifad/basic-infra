@@ -279,6 +279,10 @@ class FilesystemAdapter(BlobStorePort):
             "Switch to MinioAdapter or S3Adapter for this functionality."
         )
 
+    async def aclose(self) -> None:
+        """No-op: у файловой ФС нет долгоживущего клиента для закрытия."""
+        return None
+
     # --- Загрузка метаданных ---------------------------------------
 
     async def _load_meta(

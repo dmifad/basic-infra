@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import AsyncExitStack
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Final
 
@@ -80,23 +82,45 @@ class _S3CompatibleAdapter(BlobStorePort):
         self._secret_key = secret_key
         self._use_ssl = use_ssl
         self._session = AioSession()
+        # Разделяемый клиент: создаётся лениво при первой операции и живёт
+        # до aclose(). Раньше каждая операция открывала свой клиент, а get()
+        # вовсе не закрывал его — отсюда утечка соединений под нагрузкой.
+        self._exit_stack = AsyncExitStack()
+        self._client_obj: Any = None
+        self._client_lock = asyncio.Lock()
 
     # --- Утилиты ----------------------------------------------------
 
-    def _client(self) -> Any:
-        """Создать async context manager S3-клиента.
+    async def _get_client(self) -> Any:
+        """Вернуть разделяемый aiobotocore-клиент, создав его при первом обращении.
 
-        Каждая операция открывает свой клиент. aiobotocore-клиенты
-        дешёвые в создании и должны быть закрыты после использования.
+        Клиент создаётся один раз и кэшируется на адаптере; его время жизни
+        управляется через ``AsyncExitStack`` и закрывается в ``aclose()``.
+        Double-checked locking защищает от гонки при параллельном первом доступе.
         """
-        return self._session.create_client(
-            "s3",
-            endpoint_url=self._endpoint_url,
-            region_name=self._region_name,
-            aws_access_key_id=self._access_key,
-            aws_secret_access_key=self._secret_key,
-            use_ssl=self._use_ssl,
-        )
+        if self._client_obj is None:
+            async with self._client_lock:
+                if self._client_obj is None:
+                    self._client_obj = await self._exit_stack.enter_async_context(
+                        self._session.create_client(
+                            "s3",
+                            endpoint_url=self._endpoint_url,
+                            region_name=self._region_name,
+                            aws_access_key_id=self._access_key,
+                            aws_secret_access_key=self._secret_key,
+                            use_ssl=self._use_ssl,
+                        )
+                    )
+        return self._client_obj
+
+    async def aclose(self) -> None:
+        """Закрыть разделяемый клиент и освободить соединения.
+
+        Идемпотентна: повторный вызов безопасен. После закрытия следующая
+        операция лениво пересоздаст клиент.
+        """
+        await self._exit_stack.aclose()
+        self._client_obj = None
 
     @staticmethod
     def _object_key(tenant_id: str, key: str) -> str:
@@ -156,9 +180,9 @@ class _S3CompatibleAdapter(BlobStorePort):
             # S3-style if-none-match: "*" matches any existing object.
             put_kwargs["IfNoneMatch"] = "*"
 
+        client = await self._get_client()
         try:
-            async with self._client() as client:
-                response = await client.put_object(**put_kwargs)
+            response = await client.put_object(**put_kwargs)
         except ClientError as exc:
             code = exc.response.get("Error", {}).get("Code")
             if code in ("PreconditionFailed", "412"):
@@ -177,16 +201,11 @@ class _S3CompatibleAdapter(BlobStorePort):
 
     async def get(self, *, tenant_id: str, key: str) -> BlobData:
         object_key = self._object_key(tenant_id, key)
+        client = await self._get_client()
         try:
-            client_ctx = self._client()
-            client = await client_ctx.__aenter__()
-            try:
-                response = await client.get_object(
-                    Bucket=self._bucket, Key=object_key
-                )
-            except Exception:
-                await client_ctx.__aexit__(None, None, None)
-                raise
+            response = await client.get_object(
+                Bucket=self._bucket, Key=object_key
+            )
         except ClientError as exc:
             code = exc.response.get("Error", {}).get("Code")
             if code in ("NoSuchKey", "404"):
@@ -195,9 +214,10 @@ class _S3CompatibleAdapter(BlobStorePort):
                 f"S3 get_object failed: {exc}"
             ) from exc
 
-        # NOTE: client держится открытым на время чтения body. Закрывается
-        # после исчерпания stream. Это компромисс ради простоты — в проде
-        # стоит обернуть в явный async context manager.
+        # Клиент разделяемый и живёт до aclose(); закрывать его здесь нельзя.
+        # Тело ответа (StreamingBody) закрывает сам _S3BlobData.stream() после
+        # вычитывания — это освобождает соединение обратно в пул. Именно
+        # незакрытый per-call клиент в старом get() и был источником утечки.
         body = response["Body"]
         return _S3BlobData(
             body=body,
@@ -210,10 +230,10 @@ class _S3CompatibleAdapter(BlobStorePort):
 
     async def delete(self, *, tenant_id: str, key: str) -> None:
         object_key = self._object_key(tenant_id, key)
+        client = await self._get_client()
         try:
-            async with self._client() as client:
-                # S3 delete_object идемпотентен — не падает на отсутствующем ключе.
-                await client.delete_object(Bucket=self._bucket, Key=object_key)
+            # S3 delete_object идемпотентен — не падает на отсутствующем ключе.
+            await client.delete_object(Bucket=self._bucket, Key=object_key)
         except ClientError as exc:
             raise BlobStoreUnavailable(
                 f"S3 delete_object failed: {exc}"
@@ -223,11 +243,11 @@ class _S3CompatibleAdapter(BlobStorePort):
         self, *, tenant_id: str, key: str
     ) -> BlobMetadata | None:
         object_key = self._object_key(tenant_id, key)
+        client = await self._get_client()
         try:
-            async with self._client() as client:
-                response = await client.head_object(
-                    Bucket=self._bucket, Key=object_key
-                )
+            response = await client.head_object(
+                Bucket=self._bucket, Key=object_key
+            )
         except ClientError as exc:
             code = exc.response.get("Error", {}).get("Code")
             if code in ("404", "NoSuchKey", "NotFound"):
@@ -256,21 +276,21 @@ class _S3CompatibleAdapter(BlobStorePort):
         full_prefix = self._object_key(tenant_id, prefix) if prefix else (
             f"{tenant_id}{_TENANT_KEY_SEPARATOR}"
         )
+        client = await self._get_client()
         try:
-            async with self._client() as client:
-                paginator = client.get_paginator("list_objects_v2")
-                async for page in paginator.paginate(
-                    Bucket=self._bucket, Prefix=full_prefix
-                ):
-                    for obj in page.get("Contents", []):
-                        rel_key = self._strip_tenant(tenant_id, obj["Key"])
-                        yield BlobRef(
-                            tenant_id=tenant_id,
-                            key=rel_key,
-                            etag=obj["ETag"].strip('"'),
-                            size=obj["Size"],
-                            content_type=None,  # требует HEAD для получения
-                        )
+            paginator = client.get_paginator("list_objects_v2")
+            async for page in paginator.paginate(
+                Bucket=self._bucket, Prefix=full_prefix
+            ):
+                for obj in page.get("Contents", []):
+                    rel_key = self._strip_tenant(tenant_id, obj["Key"])
+                    yield BlobRef(
+                        tenant_id=tenant_id,
+                        key=rel_key,
+                        etag=obj["ETag"].strip('"'),
+                        size=obj["Size"],
+                        content_type=None,  # требует HEAD для получения
+                    )
         except ClientError as exc:
             raise BlobStoreUnavailable(
                 f"S3 list_objects_v2 failed: {exc}"
@@ -294,11 +314,11 @@ class _S3CompatibleAdapter(BlobStorePort):
         if op == "PUT" and content_type:
             params["ContentType"] = content_type
 
+        client = await self._get_client()
         try:
-            async with self._client() as client:
-                url = await client.generate_presigned_url(
-                    s3_op, Params=params, ExpiresIn=ttl_seconds
-                )
+            url = await client.generate_presigned_url(
+                s3_op, Params=params, ExpiresIn=ttl_seconds
+            )
         except ClientError as exc:
             raise BlobStoreUnavailable(
                 f"S3 generate_presigned_url failed: {exc}"
