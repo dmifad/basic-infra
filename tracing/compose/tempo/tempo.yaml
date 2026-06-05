@@ -1,0 +1,41 @@
+# Tempo single-binary (monolithic) configuration — basic-infra Week 7+ tracing.
+# ADR-0012. Internal ports are Tempo defaults; the *host* publish ports are
+# shifted (see tracing/compose/tracing.yml) per the loopback-port discipline.
+#
+# v1 scope: OTLP receivers + local block storage + retention. No
+# metrics_generator / service-graph yet — that wires into Prometheus
+# remote-write and is deferred (see ADR-0012 §Consequences / follow-ups) so the
+# Week 7 observability Prometheus contract stays untouched.
+
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9096        # internal only; never published to host
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+ingester:
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    # Retention. 168h = 7 days. Local backend on HDD; bump only with disk in mind.
+    block_retention: 168h
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks
+
+# usage-report is opt-out; disable to avoid outbound calls from vams-dev.
+usage_report:
+  reporting_enabled: false

@@ -154,6 +154,23 @@ deprovision:  ## ОПАСНО: drop tenant БД: make deprovision TENANT=telcoss
 	@test -n "$(TENANT)" || (echo "TENANT не задан" && exit 1)
 	PYTHONPATH=. $(VENV)/bin/python -m postgres.cli deprovision $(TENANT)
 
+# ─── tracing / Tempo (ADR-0012) ─────────────────────────────────────────────
+#
+# Compose-only: Tempo has no control-plane CLI (unlike postgres-multi) — it
+# provisions nothing per-tenant. Profile-gated under `tracing`.
+
+.PHONY: up-tracing
+up-tracing:  ## поднять только Tempo (127.0.0.1:3210/4417/4418). Без Grafana-датасорса — см. up-observability-full
+	docker compose up -d tempo
+
+.PHONY: down-tracing
+down-tracing:  ## остановить Tempo (stop+rm, НЕ down — down <svc> сносит весь проект)
+	docker compose stop tempo && docker compose rm -f tempo
+
+.PHONY: up-observability-full
+up-observability-full:  ## observability (Prometheus/Loki/Grafana) + tracing (Tempo) вместе — Tempo datasource резолвится в Grafana
+	docker compose --profile observability --profile tracing up -d
+
 # ─── Operational ────────────────────────────────────────────────────────────
 
 .PHONY: models-migrate

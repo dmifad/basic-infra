@@ -40,6 +40,20 @@ from basic_infra_observability_client.logging_setup import (
 )
 from basic_infra_observability_client.metrics import setup_metrics
 
+# Tracing (ADR-0012). Safe to import unconditionally: tracing.py imports
+# opentelemetry lazily inside functions, so this does NOT pull the optional
+# `tracing` extra into metrics/logs-only consumers. Only calling
+# setup_tracing(enabled=True) requires the extra to be installed.
+from basic_infra_observability_client.tracing import (
+    TraceContextFilter,
+    TracingSettings,
+    get_tracer,
+    install_trace_log_correlation,
+    instrument_fastapi,
+    instrument_sqlalchemy,
+    setup_tracing,
+)
+
 __all__ = [
     "ObservabilitySettings",
     "setup_logging",
@@ -51,6 +65,14 @@ __all__ = [
     "set_request_id",
     "get_request_id",
     "get_tenant_override",
+    # tracing (ADR-0012)
+    "TracingSettings",
+    "setup_tracing",
+    "get_tracer",
+    "instrument_fastapi",
+    "instrument_sqlalchemy",
+    "TraceContextFilter",
+    "install_trace_log_correlation",
 ]
 
 __version__ = "0.1.0"

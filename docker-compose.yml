@@ -25,3 +25,4 @@ include:
   - storage/compose/minio.yml
   - observability/compose/observability.yml
   - postgres/compose/postgres.yml
+  - tracing/compose/tracing.yml
