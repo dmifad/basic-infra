@@ -44,3 +44,6 @@ poetry.lock
 
 # Claude Code harness artifacts
 .claude/
+
+# Week 9 redis-shared: live admin password — never commit (template: users.acl.example)
+redis_shared/acl/users.acl
