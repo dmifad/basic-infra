@@ -47,3 +47,6 @@ poetry.lock
 
 # Week 9 redis-shared: live admin password — never commit (template: users.acl.example)
 redis_shared/acl/users.acl
+
+.git-commit-redis.txt
+_*-delivery/
