@@ -53,7 +53,15 @@ scrape_configs:
   #         service: llm-gateway
 
   # Прикладные сервисы (telcoss и другие клиенты) -------------------
-  # Адаптация — Week 11. До тех пор — Docker SD выключен.
+  # Week 11: telcoss-app adopted. Scraped by container name on basic-infra-net
+  # (the app joins this external net). honor_labels: true keeps the service/env/
+  # tenant labels the SDK attaches to each metric (do not overwrite them here).
+  - job_name: telcoss-app
+    honor_labels: true
+    static_configs:
+      - targets: ["telcoss-app:8000"]
+
+  # Дополнительные клиенты через Docker SD — включить по мере adoption.
   #
   # - job_name: docker-services
   #   docker_sd_configs:
