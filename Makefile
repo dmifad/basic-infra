@@ -151,10 +151,16 @@ provision:  ## provision tenant: make provision TENANT=telcoss
 	@test -n "$(TENANT)" || (echo "TENANT не задан: make provision TENANT=<name>" && exit 1)
 	PYTHONPATH=. $(VENV)/bin/python -m postgres.cli provision $(TENANT)
 
+# Double-gated: Makefile CONFIRM=yes AND the CLI's own --confirm (rc 2 if
+# missing) — matching redis-deprovision, so a tenant DB can't be dropped by a
+# bare invocation.
 .PHONY: deprovision
-deprovision:  ## ОПАСНО: drop tenant БД: make deprovision TENANT=telcoss
+deprovision:  ## ОПАСНО: make deprovision TENANT=x CONFIRM=yes
 	@test -n "$(TENANT)" || (echo "TENANT не задан" && exit 1)
-	PYTHONPATH=. $(VENV)/bin/python -m postgres.cli deprovision $(TENANT)
+	@if [ "$(CONFIRM)" != "yes" ]; then \
+		echo "refusing: set CONFIRM=yes to deprovision $(TENANT)"; exit 2; \
+	fi
+	PYTHONPATH=. $(VENV)/bin/python -m postgres.cli deprovision $(TENANT) --confirm
 
 # ─── tracing / Tempo (ADR-0012) ─────────────────────────────────────────────
 #

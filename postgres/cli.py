@@ -5,7 +5,10 @@
 горячего пути.
 
     PYTHONPATH=. python -m postgres.cli provision telcoss
-    PYTHONPATH=. python -m postgres.cli deprovision telcoss   # требует --force
+    PYTHONPATH=. python -m postgres.cli deprovision telcoss --confirm  # требует --confirm
+
+deprovision REQUIRES --confirm; missing → rc 2 ("guard refused"), mirroring the
+redis-shared double-gate so a tenant DB can never be dropped by a bare invocation.
 """
 from __future__ import annotations
 
@@ -40,9 +43,13 @@ async def _provision(tenant: str) -> int:
     return 0
 
 
-async def _deprovision(tenant: str, *, force: bool) -> int:
-    if not force:
-        print("деструктивная операция требует --force", file=sys.stderr)
+async def _deprovision(tenant: str, *, confirm: bool) -> int:
+    if not confirm:
+        print(
+            "refusing to deprovision without --confirm "
+            "(this drops the tenant's database)",
+            file=sys.stderr,
+        )
         return 2
     adapter = _adapter(allow_destructive=True)
     await adapter.deprovision(TenantId(tenant))
@@ -59,13 +66,17 @@ def main(argv: list[str] | None = None) -> int:
 
     p_deprov = sub.add_parser("deprovision", help="удалить tenant-БД")
     p_deprov.add_argument("tenant")
-    p_deprov.add_argument("--force", action="store_true")
+    p_deprov.add_argument(
+        "--confirm",
+        action="store_true",
+        help="required: confirms destructive removal of the tenant database",
+    )
 
     args = parser.parse_args(argv)
     if args.command == "provision":
         return asyncio.run(_provision(args.tenant))
     if args.command == "deprovision":
-        return asyncio.run(_deprovision(args.tenant, force=args.force))
+        return asyncio.run(_deprovision(args.tenant, confirm=args.confirm))
     return 1
 
 
