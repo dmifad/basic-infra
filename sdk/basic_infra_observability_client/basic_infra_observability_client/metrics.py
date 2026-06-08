@@ -26,7 +26,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Any, Sequence
+from typing import Any, Generic, Sequence, TypeVar
 
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
@@ -104,18 +104,24 @@ def _label_values_for_dimensions(
     return base
 
 
-class _LabelledInstrument:
+# Constrained to the three concrete instrument types so the wrapper preserves
+# which one it holds: counter() → _LabelledInstrument[Counter] etc., and
+# .labels() returns that concrete type (so .inc()/.observe() type-check downstream).
+_M = TypeVar("_M", Counter, Gauge, Histogram)
+
+
+class _LabelledInstrument(Generic[_M]):
     """Базовая обёртка, автоматически инжектирующая стандартные лейблы."""
 
     def __init__(
         self,
-        instrument: Counter | Gauge | Histogram,
+        instrument: _M,
         extra_labels: Sequence[str],
     ) -> None:
-        self._instrument = instrument
+        self._instrument: _M = instrument
         self._extra_labels = tuple(extra_labels)
 
-    def labels(self, **kwargs: str) -> Counter | Gauge | Histogram:
+    def labels(self, **kwargs: str) -> _M:
         """Возвращает дочерний instrument со всеми лейблами заполненными."""
         values = _label_values_for_dimensions(kwargs)
         # Порядок: сначала стандартные, потом extra в порядке объявления.
@@ -149,7 +155,7 @@ def counter(
     *,
     labels: Sequence[str] = (),
     registry: CollectorRegistry | None = None,
-) -> _LabelledInstrument:
+) -> _LabelledInstrument[Counter]:
     """Создаёт Counter со стандартными + опциональными лейблами."""
     _check_no_high_cardinality_labels(labels)
     all_labels = list(_STANDARD_LABELS) + list(labels)
@@ -168,7 +174,7 @@ def gauge(
     *,
     labels: Sequence[str] = (),
     registry: CollectorRegistry | None = None,
-) -> _LabelledInstrument:
+) -> _LabelledInstrument[Gauge]:
     """Создаёт Gauge со стандартными + опциональными лейблами."""
     _check_no_high_cardinality_labels(labels)
     all_labels = list(_STANDARD_LABELS) + list(labels)
@@ -188,7 +194,7 @@ def histogram(
     labels: Sequence[str] = (),
     buckets: Sequence[float] | None = None,
     registry: CollectorRegistry | None = None,
-) -> _LabelledInstrument:
+) -> _LabelledInstrument[Histogram]:
     """Создаёт Histogram со стандартными + опциональными лейблами."""
     _check_no_high_cardinality_labels(labels)
     all_labels = list(_STANDARD_LABELS) + list(labels)
