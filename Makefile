@@ -231,3 +231,22 @@ redis-deprovision:  ## ОПАСНО: make redis-deprovision TENANT=x CONFIRM=yes
 .PHONY: models-migrate
 models-migrate:
 	bash scripts/migrate-models-from-pamyat.sh
+
+# ─── Packaging (Track A — ADR-0015) ─────────────────────────────────────────
+# Build distributable wheels for the four SDKs + vams-llm-client. The storage
+# SDK force-includes ../../storage, so its wheel bundles the storage/ package —
+# no separate distributable. Consumers (telcoss image) pip-install this
+# wheelhouse instead of live-sourcing via host PYTHONPATH.
+WHEELHOUSE ?= dist/wheels
+.PHONY: wheels
+wheels:  ## build SDK+storage+vams-llm-client wheels into $(WHEELHOUSE) (gitignored)
+	rm -rf $(WHEELHOUSE) && mkdir -p $(WHEELHOUSE)
+	$(VENV)/bin/pip wheel --no-deps -w $(WHEELHOUSE) \
+		./sdk/basic_infra_storage_client \
+		./sdk/basic_infra_observability_client \
+		./sdk/basic_infra_postgres_client \
+		./sdk/basic_infra_redis_client \
+		./client-sdks/python
+	@# remove in-tree setuptools/poetry build artifacts (build/, *.egg-info)
+	@find sdk client-sdks -maxdepth 3 \( -name build -type d -o -name '*.egg-info' -type d \) -exec rm -rf {} + 2>/dev/null || true
+	@echo "wheels →"; ls -1 $(WHEELHOUSE)
