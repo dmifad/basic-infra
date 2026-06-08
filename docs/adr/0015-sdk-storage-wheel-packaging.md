@@ -1,6 +1,6 @@
 # ADR-0015 (basic-infra) — SDK + `storage/` wheel packaging
 
-> Status: **proposed** (Track A packaging; finalized with telcoss ADR-0014)
+> Status: **accepted** (Track A packaging — 2026-06-08; finalized with telcoss ADR-0014)
 > Date: 2026-06-08 · Related: telcoss ADR-0014 (containerized build carrying basic-infra code);
 > ADR-0010 (storage), 0011 (observability), 0013 (postgres-multi), 0014 (redis-shared); bridge v19/v20
 
@@ -49,8 +49,17 @@ when basic-infra changes (until an internal index exists). Live-source dev workf
 
 ## Verification
 
-`make wheels` builds 5 wheels; the storage wheel bundles `storage/` (16 files) + `storage/py.typed`;
-a scratch venv installs the wheelhouse and imports every package — including `storage` /
-`storage.adapters` — with **no host PYTHONPATH**. Package-source mypy strict + ruff clean; SDK tests
-pass. (Carried, unrelated: observability `test_sdk.py` strict-dirty; redis `test_health_pings_live_server`
+- **`make wheels`** builds 5 wheels; the storage wheel bundles `storage/` (16 files) + `storage/py.typed`;
+  a scratch venv installs the wheelhouse and imports every package — including `storage` /
+  `storage.adapters` — with **no host PYTHONPATH**.
+- **`py.typed` shipped** in all four SDK wheels (storage/observability/postgres via this change;
+  redis already). Package-source mypy strict + ruff clean; SDK tests pass.
+- **Downstream typing fix:** once py.typed was shipped, the observability metrics wrapper's
+  `labels()` returned the `Counter|Gauge|Histogram` union, breaking `.inc()`/`.observe()` at consumers;
+  `_LabelledInstrument` was made generic (`90a3c1f`) so it returns the concrete type. telcoss dropped
+  its `ignore_missing_imports` overrides and stays mypy-strict clean.
+- **Consumed in production form:** the telcoss image installs this wheelhouse (`--no-deps`); the
+  container imports `storage` from site-packages (not live-sourced) and `pip check` is clean.
+
+(Carried, unrelated: observability `test_sdk.py` strict-dirty; redis `test_health_pings_live_server`
 needs a live server.)
