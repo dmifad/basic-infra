@@ -24,3 +24,8 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["basic_infra_postgres_client*"]
+
+# PEP 561: ship the inline-type marker in the wheel (setuptools needs this
+# explicitly; the hatchling SDKs include it automatically).
+[tool.setuptools.package-data]
+basic_infra_postgres_client = ["py.typed"]
