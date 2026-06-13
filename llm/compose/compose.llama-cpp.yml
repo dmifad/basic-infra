@@ -40,7 +40,7 @@ services:
     restart: unless-stopped
     command:
       - "-m"
-      - "/models/T-pro-it-2.1-Q8_0.gguf"
+      - "${LLM_MODEL_PATH:-/models/T-pro-it-2.1-Q8_0.gguf}"
       - "--host"
       - "0.0.0.0"
       - "--port"
@@ -50,7 +50,7 @@ services:
       - "--n-gpu-layers"
       - "${LLAMA_N_GPU_LAYERS:-24}"
       - "--alias"
-      - "T-pro-it-2.1-Q8_0.gguf"
+      - "${LLM_MODEL_ALIAS:-T-pro-it-2.1-Q8_0.gguf}"
       # See the CPU service above — keep reasoning output inside `content`.
       - "--reasoning-format"
       - "none"
