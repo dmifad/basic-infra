@@ -54,6 +54,11 @@ services:
       # See the CPU service above — keep reasoning output inside `content`.
       - "--reasoning-format"
       - "none"
+    ports:
+      # EVAL-ONLY direct access to llama.cpp (gateway bypass). The production
+      # path stays through the gateway (:8013); this is only for the ADR-0009
+      # compliance eval, whose single-tenant load the gateway proxy can't sustain.
+      - "127.0.0.1:8014:8080"
     volumes:
       - ${LLM_MODELS_DIR:-/home/vams/llm-models}:/models:ro
     networks:
