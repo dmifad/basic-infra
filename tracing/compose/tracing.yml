@@ -1,0 +1,56 @@
+# basic-infra Week 7+ — distributed tracing (Tempo). ADR-0012.
+#
+# Discovered via root docker-compose.yml `include:` (same mechanism as
+# postgres/compose/postgres.yml). `include:` resolves a fragment's relative
+# bind paths against THIS FILE's directory (tracing/compose/), NOT the repo
+# root — mirror the postgres fragment, which mounts `../init`. A bind source
+# must start with ./ or ../ ; without it compose reads the source as a NAMED
+# volume and fails ("refers to undefined volume"). Hence `./tempo/tempo.yaml`.
+#
+# Profile-gated: `profiles: ["tracing"]`. A profile-less service auto-starts on
+# any bare `docker compose up` (Week 8 lesson) — every fragment MUST declare its
+# profile. Verify after wiring:
+#   docker compose config --services                 # MUST NOT list tempo
+#   docker compose --profile tracing config --services  # MUST list tempo
+#
+# Grafana lives in the observability profile; the Tempo datasource only resolves
+# when observability is also up. Use `make up-observability-full` (both profiles)
+# or run `--profile observability --profile tracing`.
+
+services:
+  tempo:
+    image: grafana/tempo:2.6.1
+    profiles: ["tracing"]
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    user: "10001:10001"          # official image runs as uid 10001 — HDD dir must match
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      # host side is bound to loopback only and shifted off Tempo defaults so it
+      # coexists with telcoss + basic-infra observability until Week 11 cutover.
+      - "127.0.0.1:3210:3200"    # Tempo HTTP API   (3200 -> 3210)
+      - "127.0.0.1:4417:4317"    # OTLP gRPC ingest (4317 -> 4417)
+      - "127.0.0.1:4418:4318"    # OTLP HTTP ingest (4318 -> 4418)
+    networks:
+      - basic-infra-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3200/ready | grep -q ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  tempo-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/HDD/telcoss/tempo
+
+networks:
+  basic-infra-net:
+    external: true
+    name: basic-infra-net

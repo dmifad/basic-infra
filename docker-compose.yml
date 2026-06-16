@@ -22,3 +22,8 @@ include:
   - llm/compose/compose.gateway.yml
   - llm/compose/compose.llama-cpp.yml
   - llm/compose/compose.tei.yml
+  - storage/compose/minio.yml
+  - observability/compose/observability.yml
+  - postgres/compose/postgres.yml
+  - tracing/compose/tracing.yml
+  - redis_shared/compose/redis-shared.yml

@@ -40,7 +40,7 @@ services:
     restart: unless-stopped
     command:
       - "-m"
-      - "/models/T-pro-it-2.1-Q8_0.gguf"
+      - "${LLM_MODEL_PATH:-/models/T-pro-it-2.1-Q8_0.gguf}"
       - "--host"
       - "0.0.0.0"
       - "--port"
@@ -50,10 +50,15 @@ services:
       - "--n-gpu-layers"
       - "${LLAMA_N_GPU_LAYERS:-24}"
       - "--alias"
-      - "T-pro-it-2.1-Q8_0.gguf"
+      - "${LLM_MODEL_ALIAS:-T-pro-it-2.1-Q8_0.gguf}"
       # See the CPU service above — keep reasoning output inside `content`.
       - "--reasoning-format"
       - "none"
+    ports:
+      # EVAL-ONLY direct access to llama.cpp (gateway bypass). The production
+      # path stays through the gateway (:8013); this is only for the ADR-0009
+      # compliance eval, whose single-tenant load the gateway proxy can't sustain.
+      - "127.0.0.1:8014:8080"
     volumes:
       - ${LLM_MODELS_DIR:-/home/vams/llm-models}:/models:ro
     networks:

@@ -1,0 +1,53 @@
+# basic-infra Week 9 — shared Redis for client projects (ADR-0014).
+#
+# Discovered via root docker-compose.yml `include:`. Relative paths resolve
+# against THIS fragment's dir (redis_shared/compose/), NOT the repo root, and a
+# bind source MUST start with ./ or ../ (a bare path is parsed as a named
+# volume). Hence ./conf/... and ../acl/... (mirrors postgres' ../init).
+#
+# Profile-gated: every fragment must declare its profile, else it auto-starts on
+# a bare `docker compose up`. Verify:
+#   docker compose config --services                       # MUST NOT list redis-shared
+#   docker compose --profile redis-shared config --services # MUST list it
+#
+# This is SEPARATE from the LLM-stack redis (llm/compose/compose.redis.yml).
+# Pick a host port that does not collide with it — default 6380, verify at apply.
+
+services:
+  redis-shared:
+    image: redis:7.2-alpine
+    profiles: ["redis-shared"]
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    volumes:
+      - ./conf/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      # DIRECTORY mount (not a single file): ACL SAVE writes a temp file in the
+      # aclfile's dir and atomic-renames it, so redis (uid 999) needs write on the
+      # DIR — a single-file bind mount can't be renamed over. Host dir must be
+      # writable by uid 999 (prod: chown 999:999 redis_shared/acl; see runbook).
+      - ../acl:/usr/local/etc/redis/acl
+      - redis-shared-data:/data
+    ports:
+      - "127.0.0.1:6380:6379"          # shifted off 6379 to coexist with the LLM redis
+    networks:
+      - basic-infra-net
+    restart: unless-stopped
+    healthcheck:
+      # auth-free liveness: PONG (no auth) or NOAUTH (auth on) both prove it answers.
+      test: ["CMD-SHELL", "redis-cli ping 2>&1 | grep -qE 'PONG|NOAUTH'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  redis-shared-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/vams/telcoss-data/redis-shared   # NVMe hot-data tier (not HDD)
+
+networks:
+  basic-infra-net:
+    external: true
+    name: basic-infra-net

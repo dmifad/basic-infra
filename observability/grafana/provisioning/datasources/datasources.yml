@@ -1,0 +1,46 @@
+# Grafana datasources — провижионинг.
+#
+# Поднимаются при старте Grafana, добавлять вручную через UI не нужно.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    # Explicit uid: Tempo datasource (tempo.yml) references this via
+    # serviceMap/tracesToMetrics datasourceUid: prometheus (ADR-0012). Without a
+    # pinned uid Grafana randomizes it and correlation breaks silently.
+    uid: prometheus
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s
+      httpMethod: POST
+
+  - name: Loki
+    type: loki
+    access: proxy
+    # Explicit uid: Tempo datasource (tempo.yml) tracesToLogsV2.datasourceUid
+    # points here (ADR-0012). Pin it so trace -> logs correlation resolves.
+    uid: loki
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      maxLines: 5000
+      derivedFields:
+        - datasourceUid: prometheus
+          matcherRegex: 'request_id=([\w-]+)'
+          name: request_id
+          url: '$${__value.raw}'
+        # log -> trace (ADR-0012): extract trace_id from the JSON log body and
+        # link to the Tempo datasource (uid: tempo). The structlog processor
+        # logging_setup._add_trace_context emits "trace_id":"<32 hex>".
+        - datasourceUid: tempo
+          # \s* is load-bearing: structlog JSONRenderer (json.dumps default
+          # separators) emits `"trace_id": "<hex>"` WITH a space after the colon.
+          # The no-space regex from the runbook silently never matches.
+          matcherRegex: '"trace_id":\s*"(\w+)"'
+          name: TraceID
+          url: '$${__value.raw}'

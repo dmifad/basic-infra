@@ -1,0 +1,38 @@
+apiVersion: 1
+
+# basic-infra Week 7+ — Tempo datasource for the existing (Week 7) Grafana.
+# ADR-0012. Additive: dropped into the observability Grafana provisioning dir.
+#
+# IMPORTANT: tracesToLogsV2.datasourceUid and serviceMap.datasourceUid below
+# MUST match the actual uids of the Loki and Prometheus datasources provisioned
+# in Week 7. Verify before applying:
+#   grep -R "uid:" observability/grafana/provisioning/datasources/
+# If Week 7 did not set explicit uids, set them there first (loki / prometheus)
+# OR replace the values here with the real ones. Mismatched uids = silently
+# broken correlation, not an error.
+
+datasources:
+  - name: Tempo
+    type: tempo
+    access: proxy
+    uid: tempo
+    url: http://tempo:3200
+    jsonData:
+      # Tempo span -> Loki logs (jump from a trace to its log lines).
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+        filterByTraceID: true
+        filterBySpanID: false
+        tags:
+          - key: service.name
+            value: service
+      # Tempo -> Prometheus service map / node graph. Inactive until the Tempo
+      # metrics_generator is enabled (deferred, ADR-0012); harmless if absent.
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
+      tracesToMetrics:
+        datasourceUid: prometheus

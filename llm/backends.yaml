@@ -30,6 +30,13 @@ backends:
           FP8 version — GPU only, faster than Q8.
           Enable via LLM_BACKEND_MODEL_NAME override.
 
+      - id: qwen2.5-7b-instruct-q4_k_m
+        backend_model_name: Qwen2.5-7B-Instruct-Q4_K_M.gguf
+        capabilities: [chat, completions, structured]
+        notes: |
+          Qwen2.5-7B-Instruct, Q4_K_M GGUF. Pinned compliance-gate eval model (ADR-0009).
+          NB: this backend serves whatever GGUF its container was started with
+          (LLM_BACKEND_MODEL_NAME) — the id does not guarantee the weights. Currently loaded.
   # ─── BGE-M3 embeddings via TEI ──────────────────────────────────────────
   - name: tei-embed
     kind: tei

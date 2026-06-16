@@ -1,0 +1,19 @@
+# Grafana dashboards provider.
+#
+# Указывает Grafana загружать JSON-дашборды из каталога. Изменения
+# дашбордов идут через PR (правка JSON), не через UI (UI-изменения
+# теряются при рестарте).
+
+apiVersion: 1
+
+providers:
+  - name: basic-infra
+    orgId: 1
+    folder: basic-infra
+    type: file
+    disableDeletion: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

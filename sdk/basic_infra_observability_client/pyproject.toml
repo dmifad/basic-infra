@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "basic-infra-observability-client"
+version = "0.1.0"
+description = "SDK для observability basic-infra (structlog → JSON + prometheus_client + контекст)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "basic-infra maintainers" }]
+
+dependencies = [
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "structlog>=24.1",
+    "prometheus-client>=0.20",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+    "mypy>=1.8",
+]
+# Distributed tracing (ADR-0012). Optional: tracing.py imports opentelemetry
+# lazily (inside functions), so the base SDK imports fine WITHOUT this extra —
+# metrics/logs-only consumers stay light (no grpcio). Only setup_tracing(
+# enabled=True) needs it. Versions per vams-dev 2026-06 (otel core 1.42.x,
+# instrumentation 0.63bX); lower bounds keep headroom.
+tracing = [
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.27",
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.48b0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["basic_infra_observability_client"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: tests requiring a running observability stack (Prometheus/Loki/Grafana)",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true

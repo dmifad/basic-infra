@@ -1,0 +1,18 @@
+# basic-infra shared Redis ACL file (ADR-0014).
+#
+# TEMPLATE ONLY — do NOT cp this directly to users.acl. Redis' aclfile parser
+# REJECTS `#` comment lines ("should start with user keyword"), so the live file
+# must contain ONLY `user ...` lines. Generate it with `make redis-acl-bootstrap`,
+# which substitutes the admin password AND strips these comment/blank lines.
+#
+# Set a strong admin password before first start and keep the live file out of
+# public sharing (it is git-ignored). The control plane (redis_shared.cli) appends
+# per-tenant `app_<namespace>` users here via ACL SETUSER + ACL SAVE.
+#
+# `default` is disabled so every connection must authenticate as a named user.
+# `admin` is the control-plane account; BASIC_INFRA_REDIS_ADMIN_USERNAME=admin
+# and BASIC_INFRA_REDIS_ADMIN_PASSWORD must match the password set below.
+
+user default off
+
+user admin on >REPLACE_WITH_STRONG_ADMIN_PASSWORD ~* &* +@all

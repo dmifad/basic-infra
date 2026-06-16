@@ -1,0 +1,50 @@
+# ============================================================================
+# postgres-multi — compose fragment (ADR-0013)
+#
+# Подключается в корневой docker-compose.yml через `include:`.
+#
+# Модель изоляции: database-per-client-project. Этот инстанс хостит per-tenant
+# БД; provisioning — через control-plane адаптер (postgres.LocalAdapter),
+# не через init-скрипты (init лишь предзагружает PostGIS в template1).
+#
+# Порт 5434 на 127.0.0.1: telcoss держит 5433. Переходный период до Week 12
+# adoption — см. ADR-0013 §Coexistence. После adoption telcoss переходит на
+# этот инстанс и собственный postgres telcoss останавливается.
+#
+# ВНИМАНИЕ (урок Week 7): compose `include:` резолвит относительные bind-mount
+# пути относительно ДИРЕКТОРИИ ЭТОГО ФАЙЛА, не корня репо. Init-скрипты
+# монтируются как `../init/...`, НЕ `./postgres/init/...`.
+# ============================================================================
+services:
+  postgres-multi:
+    profiles: ["postgres"]
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_MULTI_ADMIN_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_MULTI_ADMIN_PASSWORD:-changeme-please}
+      # maintenance-БД; per-tenant БД создаются control-plane адаптером
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_multi_data:/var/lib/postgresql/data
+      - ../init:/docker-entrypoint-initdb.d:ro
+    ports:
+      # Смещён с 5432/5433: telcoss-postgres держит 5433 на vams-dev.
+      # Bind на loopback (наружу не торчит), как остальной basic-infra.
+      - "127.0.0.1:${POSTGRES_MULTI_PORT:-5434}:5432"
+    labels:
+      basic-infra.observability.logs: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_MULTI_ADMIN_USER:-postgres} -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - basic-infra-net
+
+volumes:
+  postgres_multi_data:
+
+networks:
+  basic-infra-net:
+    external: true
