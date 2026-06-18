@@ -51,6 +51,8 @@ testpaths = [
     "sdk/basic_infra_storage_client/tests",
     "sdk/basic_infra_observability_client/tests",
     "sdk/basic_infra_postgres_client/tests",
+    "postgres/tests",
+    "redis_shared/tests",
 ]
 # Resolve `storage.*` and both SDK packages with no PYTHONPATH prefix.
 # (Editable-installing the storage SDK is unsupported — hatchling force-includes
