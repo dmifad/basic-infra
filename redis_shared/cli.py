@@ -5,14 +5,15 @@
     python -m redis.cli health
 
 deprovision REQUIRES --confirm (and --purge additionally requires --confirm)
-so a tenant's access/keys can never be dropped by a bare invocation. This is the
-CONFIRM-guard discipline the postgres-multi deprovision still lacks (bridge v14).
+so a tenant's access/keys can never be dropped by a bare invocation — the same
+CONFIRM-guard discipline the postgres-multi deprovision now also enforces.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 
 from .local_adapter import LocalAdapter
@@ -20,17 +21,21 @@ from .port import RedisProvisioningPort
 
 
 def _adapter() -> RedisProvisioningPort:
-    return LocalAdapter()
+    # Consume-and-reassert: the tenant ACL password is the operator secret
+    # (ADR-0016 §3), aligned with the client SDK prefix (BASIC_INFRA_REDIS_*).
+    return LocalAdapter(app_password=os.environ.get("BASIC_INFRA_REDIS_APP_PASSWORD"))
 
 
 async def _provision(tenant: str) -> int:
     creds = await _adapter().provision(tenant)
-    # Print credentials once; the password is not retrievable afterwards.
-    print(f"tenant     : {creds.tenant}")
+    # The password is the operator-supplied secret — never echo it (nor the full
+    # DSN); mask the password in the DSN and point at the env var.
+    masked_dsn = creds.dsn.replace(f":{creds.password}@", ":***@")
+    print(f"provisioned: {creds.tenant}")
     print(f"username   : {creds.username}")
-    print(f"password   : {creds.password}")
     print(f"namespace  : {creds.namespace}")
-    print(f"dsn        : {creds.dsn}")
+    print(f"dsn        : {masked_dsn}")
+    print("credential : BASIC_INFRA_REDIS_APP_PASSWORD (as supplied)")
     return 0
 
 

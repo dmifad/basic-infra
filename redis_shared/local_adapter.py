@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import secrets
 from typing import Any, Optional
 
 from basic_infra_redis_client.namespace import derive_namespace, derive_username
@@ -18,8 +17,16 @@ class LocalAdapter:
     dangerous commands removed (no FLUSHALL/CONFIG/etc.).
     """
 
-    def __init__(self, settings: Optional[AdminSettings] = None) -> None:
+    def __init__(
+        self,
+        settings: Optional[AdminSettings] = None,
+        *,
+        app_password: Optional[str] = None,
+    ) -> None:
         self._settings = settings or get_admin_settings()
+        # Operator secret for the tenant ACL user's password (ADR-0016 §3,
+        # consume-and-reassert). Required at provision time — no weak default.
+        self._app_password = app_password
 
     def _admin(self) -> Any:
         from redis.asyncio import Redis  # lazy
@@ -37,19 +44,31 @@ class LocalAdapter:
         return Redis(**kwargs)
 
     async def provision(self, tenant: str) -> TenantCredentials:
+        # Consume-and-reassert: the password is the operator secret, required —
+        # no minted-and-orphaned random, no weak default (ADR-0016 §3).
+        if not self._app_password:
+            raise ValueError(
+                "provision requires BASIC_INFRA_REDIS_APP_PASSWORD "
+                "(consume-and-reassert; no weak default)"
+            )
         namespace = derive_namespace(tenant)
         username = derive_username(tenant)
-        password = secrets.token_urlsafe(24)
+        password = self._app_password
 
         admin = self._admin()
         try:
-            # on, set password, reset then scope keys+channels, allow all but
-            # the dangerous category. resetchannels clears the permissive default.
+            # Deterministic reset-then-declare: `reset` returns the user to a
+            # clean baseline (off, no passwords/keys/channels, -@all), then we
+            # declare the full desired state — exactly one password (= the
+            # operator secret), namespace key/channel scope, all commands minus
+            # the dangerous category. Args are discrete RESP tokens (the secret
+            # and patterns are never space-joined / re-parsed), so re-running is
+            # idempotent: the user converges to the same single credential.
             await admin.execute_command(
                 "ACL", "SETUSER", username,
+                "reset",
                 "on", f">{password}",
-                "resetkeys", f"~{namespace}:*",
-                "resetchannels", f"&{namespace}:*",
+                f"~{namespace}:*", f"&{namespace}:*",
                 "+@all", "-@dangerous",
             )
             if self._settings.acl_save:

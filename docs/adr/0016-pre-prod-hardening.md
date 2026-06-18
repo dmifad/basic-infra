@@ -104,6 +104,26 @@ reliability/security gaps and corrected two stale premises from the bridge.
   orphaning a fresh password per call; verify survive-recreate; set prod data ownership (`chown 999`). Keep
   `aclfile` persistence as-is.
 
+  **Locked redis model** (`redis_shared/local_adapter.py::provision`, mirrors the pg §2 design):
+  - **Consume-and-reassert, required secret.** The tenant ACL password is the operator secret
+    `BASIC_INFRA_REDIS_APP_PASSWORD` (aligned with the client SDK prefix `BASIC_INFRA_REDIS_*`); absent/empty →
+    hard error (no `secrets.token_urlsafe` random, no weak default). Re-provision converges to **exactly one
+    password = the secret**, so the credential is reproducible and nothing is orphaned (fixes the C-verify
+    "unprovisioned" symptom).
+  - **Deterministic reset-then-declare.** A single `ACL SETUSER app_<tenant> reset on >{secret} ~ns:* &ns:*
+    +@all -@dangerous` — `reset` returns the user to a clean baseline (off, no passwords/keys/channels, `-@all`),
+    then the full desired state is declared. Arguments are **discrete RESP tokens** (the secret and patterns are
+    never space-joined / re-parsed).
+  - **Persist.** `ACL SAVE` after `SETUSER` (`acl_save` default True; `aclfile` = source of truth on restart).
+  - **CLI never echoes the secret** — prints username/namespace + a password-masked DSN + a pointer to
+    `BASIC_INFRA_REDIS_APP_PASSWORD`; the "not retrievable" caveat is gone.
+  - **Prod ownership** (host runbook step, not a code fork; H4): `chown 999:999 redis_shared/acl` + `chmod 750`
+    so redis (uid 999) owns the bind-mounted aclfile dir and the `ACL SAVE` temp-file + atomic rename work under
+    non-world-writable perms. **Survive-recreate verification** (stop + `rm -f` + recreate `--profile
+    redis-shared` → ACL + data persist, writable as 999) is **green-lit separately** — it blips the shared cache.
+  - Integration test (exactly one password = secret · namespace scope · re-run idempotency) against a throwaway
+    redis is a **follow-up** — no such fixture in the suite yet.
+
 ## Consequences
 - Gateway recreate / sustained load no longer produces multi-minute hangs: bounded failure + auto-recovery.
   **Unblocks reverting the :8014 eval bypass** (telcoss ADR-0015 / phase H5).
