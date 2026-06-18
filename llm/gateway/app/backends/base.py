@@ -17,6 +17,7 @@ Concrete implementations live next to this file:
 """
 from __future__ import annotations
 
+import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -25,12 +26,15 @@ from typing import Any, ClassVar
 import httpx
 
 from ..exceptions import BackendTimeoutError, BackendUnavailableError, InvalidRequestError
+from ..observability.logging import get_logger
 from ..schemas.chat import ChatCompletionRequest, ChatCompletionResponse
 from ..schemas.completions import CompletionRequest, CompletionResponse
 from ..schemas.embeddings import EmbeddingRequest, EmbeddingResponse
 from ..schemas.rerank import RerankRequest, RerankResponse
 
 _HEALTH_TIMEOUT = 5.0
+
+_log = get_logger("backend")
 
 
 @dataclass(frozen=True)
@@ -58,17 +62,41 @@ class BackendAdapter(ABC):
         *,
         name: str,
         base_url: str,
-        timeout_seconds: int = 900,
+        read_timeout_seconds: float = 900.0,
         api_key: str | None = None,
     ) -> None:
         self.name = name
         self.base_url = base_url.rstrip("/")
-        self.timeout_seconds = timeout_seconds
+        self._read_timeout_seconds = read_timeout_seconds
         self.api_key = api_key
-        self._client = httpx.AsyncClient(timeout=float(timeout_seconds))
+        self._client = self._make_client()
         self._healthy = True  # optimistic until the first health check
         self._consecutive_failures = 0
         self._last_checked: datetime | None = None
+
+    def _make_client(self) -> httpx.AsyncClient:
+        """Build the upstream HTTP client (used at init and on reconnect).
+
+        Structural timeout: a short connect/pool/write budget makes a stale or
+        churned-backend socket fail fast (~5s) instead of hanging on the long
+        read budget; ``read`` keeps the full generation budget, threaded from
+        ``config.backend_request_timeout_seconds``. Limits bound the keepalive
+        pool and expire idle connections at 30s so stale keepalive sockets to a
+        recreated backend are not held indefinitely.
+        """
+        return httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=5.0,
+                read=float(self._read_timeout_seconds),
+                write=10.0,
+                pool=5.0,
+            ),
+            limits=httpx.Limits(
+                max_keepalive_connections=20,
+                max_connections=100,
+                keepalive_expiry=30.0,
+            ),
+        )
 
     # ─── health state ───────────────────────────────────────────────────────
 
@@ -85,12 +113,17 @@ class BackendAdapter(ABC):
     def last_checked(self) -> datetime | None:
         return self._last_checked
 
-    def record_health(self, ok: bool, *, unhealthy_threshold: int) -> None:
+    def record_health(self, ok: bool, *, unhealthy_threshold: int) -> bool:
         """Fold one health-probe result into this adapter's state.
 
         A backend is marked unhealthy only after ``unhealthy_threshold``
         consecutive failures; a single success clears the streak.
+
+        Returns ``True`` exactly on the down→up recovery edge (a successful
+        probe while the adapter was unhealthy) so the caller can rebuild the
+        upstream client once per recovery — not on every healthy tick.
         """
+        was_unhealthy = not self._healthy
         self._last_checked = datetime.now(UTC)
         if ok:
             self._healthy = True
@@ -99,10 +132,35 @@ class BackendAdapter(ABC):
             self._consecutive_failures += 1
             if self._consecutive_failures >= unhealthy_threshold:
                 self._healthy = False
+        return ok and was_unhealthy
 
     def supports(self, capability: str) -> bool:
         """Whether this adapter kind serves ``capability``."""
         return capability in self.capabilities
+
+    async def reconnect(self) -> None:
+        """Rebuild the upstream client, draining the old pool in the background.
+
+        Called on a health recovery edge: a recreated backend may have left
+        stale keepalive sockets in the old pool. Swap the client reference
+        atomically (new requests use the fresh pool immediately) and defer the
+        old client's ``aclose()`` so in-flight requests on it can drain first.
+        """
+        old = self._client
+        self._client = self._make_client()
+        asyncio.create_task(self._deferred_close(old, grace=self._read_timeout_seconds))
+
+    async def _deferred_close(self, client: httpx.AsyncClient, *, grace: float) -> None:
+        """Close ``client`` after ``grace`` seconds so in-flight requests drain.
+
+        Grace = the backend's read cap (tpro 900s / TEI 60s): the longest a
+        request still using the old client could run.
+        """
+        try:
+            await asyncio.sleep(grace)
+            await client.aclose()
+        except Exception:  # never let a deferred close crash the loop
+            _log.debug("deferred_close_failed", backend=self.name, exc_info=True)
 
     async def aclose(self) -> None:
         """Close the underlying HTTP client."""

@@ -39,7 +39,14 @@ class HealthChecker:
             except Exception as exc:  # a probe must never crash the loop
                 _log.warning("health_probe_error", backend=adapter.name, error=str(exc))
                 ok = False
-            adapter.record_health(ok, unhealthy_threshold=self._threshold)
+            recovered = adapter.record_health(ok, unhealthy_threshold=self._threshold)
+            if recovered:
+                _log.info(
+                    "backend_client_reconnect",
+                    backend=adapter.name,
+                    reason="health_recovery_edge",
+                )
+                await adapter.reconnect()
             if not ok:
                 _log.warning(
                     "backend_probe_failed",
