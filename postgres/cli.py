@@ -30,6 +30,9 @@ def _adapter(*, allow_destructive: bool) -> LocalAdapter:
             "POSTGRES_MULTI_ADMIN_PASSWORD", "changeme-please"
         ),
         allow_destructive=allow_destructive,
+        # Secret for the least-privilege runtime role (ADR-0016 §2); aligned with
+        # the client SDK prefix (BASIC_INFRA_POSTGRES_*). Absent → role skipped.
+        app_password=os.environ.get("BASIC_INFRA_POSTGRES_APP_PASSWORD"),
     )
 
 

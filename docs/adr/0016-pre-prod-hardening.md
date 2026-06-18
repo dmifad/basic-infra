@@ -76,6 +76,29 @@ reliability/security gaps and corrected two stale premises from the bridge.
   independent of migration timing (decouples role provisioning from when 0008–0010 are applied). The runtime
   DSN switches off the superuser on the telcoss side (ADR-0015).
 
+  **Locked grant model** (`postgres/_local.py::grant_runtime_role`, idempotent / re-runnable):
+  - **Consume-and-reassert credential.** The role password is read from a required secret
+    (`BASIC_INFRA_POSTGRES_APP_PASSWORD`, aligned with the client SDK prefix); absent → role provisioning is
+    skipped (DB-only, back-compat). Empty → hard error (no weak default). Every run re-asserts the password and
+    attributes (`LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`), so the credential is always current.
+  - **Server-side `%I`/`%L` quoting.** The password is passed as a real bind parameter into a
+    transaction-local GUC (`set_config('telcoss.app_pw', $1, true)`) and applied via
+    `format('ALTER ROLE %I … PASSWORD %L', role, current_setting(…))` inside a `DO` block — no manual escaping,
+    no dependency on `standard_conforming_strings`, no password in statement text; the GUC is dropped at commit.
+  - **grant-sync for schema USAGE.** `ALTER DEFAULT PRIVILEGES` has **no schema-level form**, so per-schema
+    `USAGE` + `SELECT,INSERT,UPDATE,DELETE ON ALL TABLES` + `USAGE,SELECT ON ALL SEQUENCES` is (re)applied by
+    looping every non-system, non-`public` schema. New schemas (e.g. `compliance`/`configs` from 0008/0009) are
+    picked up by **re-running grant-sync post-migration** (H4 runbook).
+  - **Narrow PostGIS set in `public`.** `USAGE` + `EXECUTE ON ALL FUNCTIONS` + `SELECT` on the present subset of
+    `spatial_ref_sys` / `geometry_columns` / `geography_columns` — **no** blanket `SELECT` on `public`, **nothing**
+    on `alembic_version`.
+  - **Future objects.** `ALTER DEFAULT PRIVILEGES FOR ROLE <owner>` **database-wide** (no `IN SCHEMA`) grants DML
+    on tables + `USAGE,SELECT` on sequences the migration-runner creates later — covers future-schema tables
+    without re-running.
+  - Migrations continue to run as the owner/superuser; only the **runtime** DSN switches to `app_telcoss`
+    (telcoss ADR-0015 / H3). Integration test (role attributes · DML-allowed/DDL-denied · re-run idempotency)
+    against a throwaway PostGIS is a **follow-up** — no such fixture in the suite yet.
+
 ### 3. Redis re-provision idempotency (phase H2b)
 - Make provisioning **recoverable/idempotent** — stable or recoverable credential path instead of minting +
   orphaning a fresh password per call; verify survive-recreate; set prod data ownership (`chown 999`). Keep
