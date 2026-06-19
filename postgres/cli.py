@@ -25,14 +25,14 @@ def _adapter(*, allow_destructive: bool) -> LocalAdapter:
     return LocalAdapter(
         host=os.environ.get("POSTGRES_MULTI_HOST", "localhost"),
         port=int(os.environ.get("POSTGRES_MULTI_PORT", "5434")),
-        admin_user=os.environ.get("POSTGRES_MULTI_ADMIN_USER", "postgres"),
+        admin_user=os.environ.get("POSTGRES_ADMIN_USERNAME", "postgres"),
         admin_password=os.environ.get(
-            "POSTGRES_MULTI_ADMIN_PASSWORD", "changeme-please"
+            "POSTGRES_ADMIN_PASSWORD", "changeme-please"
         ),
         allow_destructive=allow_destructive,
-        # Secret for the least-privilege runtime role (ADR-0016 §2); aligned with
-        # the client SDK prefix (BASIC_INFRA_POSTGRES_*). Absent → role skipped.
-        app_password=os.environ.get("BASIC_INFRA_POSTGRES_APP_PASSWORD"),
+        # Secret for the least-privilege runtime role (ADR-0016 §2), canonical
+        # platform env name. Absent → role provisioning is skipped.
+        app_password=os.environ.get("POSTGRES_APP_PASSWORD"),
     )
 
 

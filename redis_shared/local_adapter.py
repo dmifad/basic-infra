@@ -48,7 +48,7 @@ class LocalAdapter:
         # no minted-and-orphaned random, no weak default (ADR-0016 §3).
         if not self._app_password:
             raise ValueError(
-                "provision requires BASIC_INFRA_REDIS_APP_PASSWORD "
+                "provision requires REDIS_APP_PASSWORD "
                 "(consume-and-reassert; no weak default)"
             )
         namespace = derive_namespace(tenant)

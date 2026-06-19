@@ -78,7 +78,7 @@ reliability/security gaps and corrected two stale premises from the bridge.
 
   **Locked grant model** (`postgres/_local.py::grant_runtime_role`, idempotent / re-runnable):
   - **Consume-and-reassert credential.** The role password is read from a required secret
-    (`BASIC_INFRA_POSTGRES_APP_PASSWORD`, aligned with the client SDK prefix); absent → role provisioning is
+    (`POSTGRES_APP_PASSWORD`, the canonical platform env name); absent → role provisioning is
     skipped (DB-only, back-compat). Empty → hard error (no weak default). Every run re-asserts the password and
     attributes (`LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`), so the credential is always current.
   - **Server-side `%I`/`%L` quoting.** The password is passed as a real bind parameter into a
@@ -106,7 +106,7 @@ reliability/security gaps and corrected two stale premises from the bridge.
 
   **Locked redis model** (`redis_shared/local_adapter.py::provision`, mirrors the pg §2 design):
   - **Consume-and-reassert, required secret.** The tenant ACL password is the operator secret
-    `BASIC_INFRA_REDIS_APP_PASSWORD` (aligned with the client SDK prefix `BASIC_INFRA_REDIS_*`); absent/empty →
+    `REDIS_APP_PASSWORD` (the canonical platform env name); absent/empty →
     hard error (no `secrets.token_urlsafe` random, no weak default). Re-provision converges to **exactly one
     password = the secret**, so the credential is reproducible and nothing is orphaned (fixes the C-verify
     "unprovisioned" symptom).
@@ -116,7 +116,7 @@ reliability/security gaps and corrected two stale premises from the bridge.
     never space-joined / re-parsed).
   - **Persist.** `ACL SAVE` after `SETUSER` (`acl_save` default True; `aclfile` = source of truth on restart).
   - **CLI never echoes the secret** — prints username/namespace + a password-masked DSN + a pointer to
-    `BASIC_INFRA_REDIS_APP_PASSWORD`; the "not retrievable" caveat is gone.
+    `REDIS_APP_PASSWORD`; the "not retrievable" caveat is gone.
   - **Prod ownership** (host runbook step, not a code fork; H4): `chown 999:999 redis_shared/acl` + `chmod 750`
     so redis (uid 999) owns the bind-mounted aclfile dir and the `ACL SAVE` temp-file + atomic rename work under
     non-world-writable perms. **Survive-recreate verification** (stop + `rm -f` + recreate `--profile

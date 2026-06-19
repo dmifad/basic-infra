@@ -1,7 +1,7 @@
-"""Control-plane (admin) settings. Env prefix BASIC_INFRA_REDIS_ADMIN_.
+"""Control-plane (admin) settings. Env prefix REDIS_ADMIN_.
 
 Separate from the data-plane BASIC_INFRA_REDIS_* so tenant apps never carry
-admin credentials. ENV split preserved (BASIC_INFRA_REDIS_ADMIN_ENV).
+admin credentials. ENV split preserved (REDIS_ADMIN_ENV).
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class AdminSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="BASIC_INFRA_REDIS_ADMIN_",
+        env_prefix="REDIS_ADMIN_",
         # Load admin creds from the repo .env so the control-plane CLI works
         # however it is invoked (make targets, direct `python -m redis_shared.cli`).
         # Real environment variables still take precedence over the file.

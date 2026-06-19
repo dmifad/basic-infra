@@ -14,7 +14,7 @@ from redis_shared.local_adapter import LocalAdapter
 
 
 async def test_provision_requires_app_password() -> None:
-    """No BASIC_INFRA_REDIS_APP_PASSWORD → provision raises before connecting."""
+    """No REDIS_APP_PASSWORD → provision raises before connecting."""
     adapter = LocalAdapter(app_password=None)
     with pytest.raises(ValueError):
         await adapter.provision("telcoss")

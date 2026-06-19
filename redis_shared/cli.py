@@ -22,8 +22,8 @@ from .port import RedisProvisioningPort
 
 def _adapter() -> RedisProvisioningPort:
     # Consume-and-reassert: the tenant ACL password is the operator secret
-    # (ADR-0016 §3), aligned with the client SDK prefix (BASIC_INFRA_REDIS_*).
-    return LocalAdapter(app_password=os.environ.get("BASIC_INFRA_REDIS_APP_PASSWORD"))
+    # (ADR-0016 §3), canonical platform env name.
+    return LocalAdapter(app_password=os.environ.get("REDIS_APP_PASSWORD"))
 
 
 async def _provision(tenant: str) -> int:
@@ -35,7 +35,7 @@ async def _provision(tenant: str) -> int:
     print(f"username   : {creds.username}")
     print(f"namespace  : {creds.namespace}")
     print(f"dsn        : {masked_dsn}")
-    print("credential : BASIC_INFRA_REDIS_APP_PASSWORD (as supplied)")
+    print("credential : REDIS_APP_PASSWORD (as supplied)")
     return 0
 
 
