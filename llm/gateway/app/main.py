@@ -47,7 +47,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         settings.redis_url, fail_open=settings.rate_limit_fail_open
     )
 
-    registry = Registry.load(settings.backends_config)
+    registry = Registry.load(
+        settings.backends_config,
+        request_timeout_seconds=float(settings.backend_request_timeout_seconds),
+    )
     app.state.registry = registry
     app.state.router = Router(registry)
     health_checker = HealthChecker(

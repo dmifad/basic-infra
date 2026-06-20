@@ -36,9 +36,9 @@ make redis-acl-bootstrap
 
 Idempotent: no-op if `redis_shared/acl/users.acl` already exists. On a fresh host
 it renders the live file from `users.acl.example` and keeps the admin password in
-sync with `.env` — reusing `BASIC_INFRA_REDIS_ADMIN_PASSWORD` if already set,
-otherwise autogenerating one and appending `BASIC_INFRA_REDIS_ADMIN_USERNAME=admin`
-+ `BASIC_INFRA_REDIS_ADMIN_PASSWORD=<generated>` to `.env`. The control plane
+sync with `.env` — reusing `REDIS_ADMIN_PASSWORD` if already set,
+otherwise autogenerating one and appending `REDIS_ADMIN_USERNAME=admin`
++ `REDIS_ADMIN_PASSWORD=<generated>` to `.env`. The control plane
 (`127.0.0.1:6380`) authenticates as that admin; the two must match.
 
 ## 2. Bring it up
@@ -63,10 +63,10 @@ make down-redis-shared      # stop + rm -f redis-shared
 ```bash
 # repo uses $(VENV)/bin; the SDK must be installed in that venv so the control
 # plane can import basic_infra_redis_client (pip install -e sdk/basic_infra_redis_client)
-export BASIC_INFRA_REDIS_ADMIN_HOST=127.0.0.1
-export BASIC_INFRA_REDIS_ADMIN_PORT=6380
-export BASIC_INFRA_REDIS_ADMIN_USERNAME=admin
-export BASIC_INFRA_REDIS_ADMIN_PASSWORD=...   # the admin pass from step 1
+export REDIS_ADMIN_HOST=127.0.0.1
+export REDIS_ADMIN_PORT=6380
+export REDIS_ADMIN_USERNAME=admin
+export REDIS_ADMIN_PASSWORD=...   # the admin pass from step 1
 
 make redis-provision TENANT=telcoss
 # prints username (app_telcoss), a one-time password, namespace, dsn.

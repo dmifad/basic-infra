@@ -36,6 +36,10 @@ services:
       BACKENDS_CONFIG: /app/backends.yaml
       BACKEND_HEALTH_INTERVAL_SECONDS: "30"
       BACKEND_UNHEALTHY_THRESHOLD: "3"
+      # Upstream HTTP read budget (long-generation cap). connect/pool/write
+      # budgets are short and fixed in the adapter; only this read budget is
+      # tunable. Must be in environment: to reach the container (not just .env).
+      BACKEND_REQUEST_TIMEOUT_SECONDS: "${BACKEND_REQUEST_TIMEOUT_SECONDS:-900}"
     ports:
       - "127.0.0.1:${GATEWAY_HOST_PORT:-8003}:8003"
     volumes:

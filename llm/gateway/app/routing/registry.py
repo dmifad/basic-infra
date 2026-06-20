@@ -52,7 +52,9 @@ class BackendConfig(BaseModel):
     name: str
     kind: str
     base_url: str
-    timeout_seconds: int = 900
+    # Per-backend upstream read budget (seconds). When omitted, the backend
+    # inherits the global default (config.backend_request_timeout_seconds).
+    timeout_seconds: int | None = None
     api_key_env: str | None = None
     models: list[ModelConfig] = Field(min_length=1)
 
@@ -76,11 +78,16 @@ class Registry:
         self._model_meta: dict[str, ModelConfig] = {}
 
     @classmethod
-    def load(cls, path: Path) -> Registry:
+    def load(cls, path: Path, *, request_timeout_seconds: float = 900.0) -> Registry:
         """Load a registry from a ``backends.yaml`` file.
 
         A missing file yields an empty registry (the gateway still boots, with
         no models). A present-but-invalid file raises :class:`RegistryError`.
+
+        ``request_timeout_seconds`` is the **default** upstream HTTP read budget
+        (``config.backend_request_timeout_seconds``); a backend overrides it with
+        its own ``timeout_seconds`` in backends.yaml. connect/pool/write budgets
+        are short and fixed in the adapter.
         """
         registry = cls()
         if not path.exists():
@@ -91,17 +98,21 @@ class Registry:
             config = BackendsConfig.model_validate(raw)
         except (yaml.YAMLError, ValidationError) as exc:
             raise RegistryError(f"invalid backends config {path}: {exc}") from exc
-        registry._build(config)
+        registry._build(config, request_timeout_seconds=request_timeout_seconds)
         return registry
 
     @classmethod
-    def from_config(cls, config: BackendsConfig) -> Registry:
+    def from_config(
+        cls, config: BackendsConfig, *, request_timeout_seconds: float = 900.0
+    ) -> Registry:
         """Build a registry directly from a validated config (used in tests)."""
         registry = cls()
-        registry._build(config)
+        registry._build(config, request_timeout_seconds=request_timeout_seconds)
         return registry
 
-    def _build(self, config: BackendsConfig) -> None:
+    def _build(
+        self, config: BackendsConfig, *, request_timeout_seconds: float = 900.0
+    ) -> None:
         for backend in config.backends:
             adapter_cls = _ADAPTER_KINDS.get(backend.kind)
             if adapter_cls is None:
@@ -112,7 +123,13 @@ class Registry:
             adapter = adapter_cls(
                 name=backend.name,
                 base_url=backend.base_url,
-                timeout_seconds=backend.timeout_seconds,
+                # Per-backend read budget if set in backends.yaml, else the
+                # global default (config.backend_request_timeout_seconds).
+                read_timeout_seconds=(
+                    float(backend.timeout_seconds)
+                    if backend.timeout_seconds is not None
+                    else request_timeout_seconds
+                ),
                 api_key=api_key,
             )
             self._adapters.append(adapter)

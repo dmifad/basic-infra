@@ -40,12 +40,17 @@ class LocalAdapter:
         admin_user: str,
         admin_password: str,
         allow_destructive: bool = False,
+        app_password: str | None = None,
     ) -> None:
         self._host = host
         self._port = port
         self._admin_user = admin_user
         self._admin_password = admin_password
         self._allow_destructive = allow_destructive
+        # Secret for the least-privilege runtime role ``app_<tenant>`` (ADR-0016
+        # §2). When set, :meth:`provision` (re-)asserts the role; when absent,
+        # role provisioning is skipped (back-compat: DB-only provisioning).
+        self._app_password = app_password
 
     async def _admin_connect(self) -> asyncpg.Connection:
         """Соединение с maintenance-БД ``postgres`` под admin-ролью."""
@@ -83,6 +88,114 @@ class LocalAdapter:
             await target.execute("CREATE EXTENSION IF NOT EXISTS postgis")
         finally:
             await target.close()
+
+        # Least-privilege runtime role (ADR-0016 §2) — only when the secret is
+        # supplied; otherwise stay DB-only (back-compat).
+        if self._app_password:
+            await self.grant_runtime_role(tenant, self._app_password)
+
+    async def grant_runtime_role(self, tenant: TenantId, password: str) -> None:
+        """Idempotently (re-)assert the least-privilege runtime role ``app_<tenant>``.
+
+        Runs as the admin/owner on the tenant DB. Creates the role if absent,
+        then **always** re-asserts its attributes + password; grant-syncs
+        runtime DML on every user schema; grants a narrow PostGIS set in
+        ``public`` (no blanket ``SELECT``, nothing on ``alembic_version``); and
+        sets database-wide ``DEFAULT PRIVILEGES`` for the owner so future
+        migration-created tables/sequences are covered without re-running.
+
+        Fully re-runnable: ``GRANT`` / ``ALTER DEFAULT PRIVILEGES`` are
+        idempotent and ``CREATE ROLE`` is guarded. Schema-level ``USAGE`` for a
+        *newly created* schema is picked up by re-running this after migrations
+        (H4 runbook) — ``ALTER DEFAULT PRIVILEGES`` has no schema-level form.
+
+        :raises ValueError: if ``password`` is empty (no weak default).
+        """
+        if not password:
+            raise ValueError("grant_runtime_role: пустой пароль для runtime-роли")
+        db = database_name(tenant)  # валидирует tenant → безопасный идентификатор
+        role = f"app_{tenant}"
+        owner = self._admin_user  # роль-владелец = тот, кто прогоняет миграции
+        conn = await asyncpg.connect(
+            host=self._host,
+            port=self._port,
+            user=self._admin_user,
+            password=self._admin_password,
+            database=db,
+        )
+        try:
+            # Один транзакционный блок: гранты атомарны, а пароль живёт только в
+            # transaction-local GUC (is_local=true), который сбрасывается на commit.
+            async with conn.transaction():
+                # Пароль уходит настоящим bind-параметром в set_config (не в текст
+                # statement), затем читается server-side через current_setting и
+                # квотируется format(%L) — без ручного экранирования и без
+                # зависимости от standard_conforming_strings.
+                await conn.execute(
+                    "SELECT set_config('telcoss.app_pw', $1, true)", password
+                )
+                # Роль: создать при отсутствии, затем ВСЕГДА переутвердить атрибуты
+                # + пароль (server-side %I/%L). role валидирован (app_<tenant>).
+                await conn.execute(
+                    "DO $$ BEGIN "
+                    f"IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{role}') "
+                    f'THEN CREATE ROLE "{role}"; END IF; '
+                    "EXECUTE format("
+                    "'ALTER ROLE %I WITH LOGIN NOSUPERUSER NOCREATEDB "
+                    "NOCREATEROLE NOBYPASSRLS PASSWORD %L', "
+                    f"'{role}', current_setting('telcoss.app_pw')); "
+                    "END $$"
+                )
+            # Транзакция закрыта — пароль-GUC сброшен. Остальные гранты идемпотентны
+            # и идут в autocommit.
+            await conn.execute(f'GRANT CONNECT ON DATABASE "{db}" TO "{role}"')
+
+            # grant-sync: runtime DML по всем user-схемам (кроме системных + public).
+            schemas = await conn.fetch(
+                "SELECT nspname FROM pg_namespace "
+                "WHERE nspname NOT IN "
+                "('pg_catalog', 'information_schema', 'pg_toast', 'public') "
+                "AND nspname NOT LIKE 'pg_temp_%' "
+                "AND nspname NOT LIKE 'pg_toast_temp_%'"
+            )
+            for record in schemas:
+                s = str(record["nspname"]).replace('"', '""')
+                await conn.execute(f'GRANT USAGE ON SCHEMA "{s}" TO "{role}"')
+                await conn.execute(
+                    f"GRANT SELECT, INSERT, UPDATE, DELETE "
+                    f'ON ALL TABLES IN SCHEMA "{s}" TO "{role}"'
+                )
+                await conn.execute(
+                    f'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA "{s}" TO "{role}"'
+                )
+
+            # public: узкий PostGIS-набор (без blanket SELECT, без alembic_version).
+            await conn.execute(f'GRANT USAGE ON SCHEMA public TO "{role}"')
+            await conn.execute(
+                f'GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO "{role}"'
+            )
+            postgis_rels = await conn.fetch(
+                "SELECT c.relname FROM pg_class c "
+                "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE n.nspname = 'public' AND c.relname IN "
+                "('spatial_ref_sys', 'geometry_columns', 'geography_columns')"
+            )
+            for record in postgis_rels:
+                rel = str(record["relname"]).replace('"', '""')
+                await conn.execute(f'GRANT SELECT ON public."{rel}" TO "{role}"')
+
+            # future-proofing: объекты, создаваемые owner'ом позже (миграции),
+            # database-wide (без IN SCHEMA) → покрывает таблицы в будущих схемах.
+            await conn.execute(
+                f'ALTER DEFAULT PRIVILEGES FOR ROLE "{owner}" '
+                f'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "{role}"'
+            )
+            await conn.execute(
+                f'ALTER DEFAULT PRIVILEGES FOR ROLE "{owner}" '
+                f'GRANT USAGE, SELECT ON SEQUENCES TO "{role}"'
+            )
+        finally:
+            await conn.close()
 
     async def deprovision(self, tenant: TenantId) -> None:
         if not self._allow_destructive:
