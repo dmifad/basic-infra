@@ -206,3 +206,61 @@ async def test_provision_connect_roundtrip(postgis_container) -> None:  # type: 
 
     await adapter.deprovision(tenant)
     assert await adapter.exists(tenant) is False
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_app_role_reassert_strips_drift_when_reprovisioned(postgis_container) -> None:  # type: ignore[no-untyped-def]
+    """H2a consume-and-reassert: re-provisioning re-asserts the least-privilege
+    role attributes, stripping any drift. Hermetic — throwaway PostGIS container,
+    never the live shared instance (provision is a mutation)."""
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from postgres import LocalAdapter, TenantId
+
+    host = postgis_container.get_container_host_ip()
+    port = int(postgis_container.get_exposed_port(5432))
+    tenant = TenantId("telcoss")
+    adapter = LocalAdapter(
+        host=host,
+        port=port,
+        admin_user="postgres",
+        admin_password="postgres",
+        allow_destructive=True,
+        app_password="t3st-app-secret",
+    )
+
+    # Idempotent: provisioning twice must not raise.
+    await adapter.provision(tenant)
+    await adapter.provision(tenant)
+
+    admin = create_async_engine(
+        f"postgresql+asyncpg://postgres:postgres@{host}:{port}/telcoss", echo=False
+    )
+
+    async def _attrs():  # type: ignore[no-untyped-def]
+        async with admin.connect() as conn:
+            return (await conn.execute(text(
+                "SELECT rolsuper, rolcreatedb, rolcreaterole, rolbypassrls, rolcanlogin "
+                "FROM pg_roles WHERE rolname = 'app_telcoss'"
+            ))).one()
+
+    try:
+        row = await _attrs()
+        assert (row.rolsuper, row.rolcreatedb, row.rolcreaterole, row.rolbypassrls) == (
+            False, False, False, False,
+        )
+        assert row.rolcanlogin is True
+
+        # Inject drift, confirm it took, then re-provision → reassert strips it.
+        async with admin.begin() as conn:
+            await conn.execute(text('ALTER ROLE "app_telcoss" CREATEDB SUPERUSER'))
+        drifted = await _attrs()
+        assert (drifted.rolsuper, drifted.rolcreatedb) == (True, True)
+
+        await adapter.provision(tenant)  # consume-and-reassert
+        fixed = await _attrs()
+        assert (fixed.rolsuper, fixed.rolcreatedb) == (False, False)
+    finally:
+        await admin.dispose()
