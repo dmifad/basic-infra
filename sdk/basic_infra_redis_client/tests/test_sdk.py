@@ -68,7 +68,23 @@ def test_dsn_uses_rediss_when_ssl():
 
 @pytest.mark.integration
 async def test_health_pings_live_server():
-    # Requires the shared Redis profile up; deselected in normal runs.
-    from basic_infra_redis_client import check_health
+    # Live-server connectivity probe (NOT hermetic): exercises check_health against
+    # the env-configured ACL redis. Skip when no server is reachable — check_health
+    # swallows all errors into False, so a direct ping is used to distinguish
+    # "unreachable" from "unhealthy". When a server DOES answer, the real health
+    # assertion is kept.
+    from basic_infra_redis_client import (
+        RedisSettings,
+        check_health,
+        create_async_client,
+    )
+
+    probe = create_async_client(RedisSettings())
+    try:
+        await probe.ping()
+    except Exception:
+        pytest.skip("live ACL redis not reachable")
+    finally:
+        await probe.aclose()
 
     assert await check_health() is True
