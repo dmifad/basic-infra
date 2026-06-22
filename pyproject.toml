@@ -51,6 +51,7 @@ testpaths = [
     "sdk/basic_infra_storage_client/tests",
     "sdk/basic_infra_observability_client/tests",
     "sdk/basic_infra_postgres_client/tests",
+    "sdk/basic_infra_redis_client/tests",
     "postgres/tests",
     "redis_shared/tests",
 ]
@@ -62,6 +63,7 @@ pythonpath = [
     "sdk/basic_infra_storage_client",
     "sdk/basic_infra_observability_client",
     "sdk/basic_infra_postgres_client",
+    "sdk/basic_infra_redis_client",
 ]
 markers = [
     "integration: requires an out-of-process backend (moto / testcontainers / live observability stack)",
