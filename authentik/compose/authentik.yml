@@ -59,6 +59,8 @@ services:
     volumes:
       - authentik_media:/media
       - authentik_templates:/templates
+      # OIDC RP registration — auto-discovered blueprint (subdir, no /blueprints/system shadow)
+      - ../blueprints:/blueprints/telcoss:ro
     ports:
       - "127.0.0.1:9002:9000"     # HTTP  (9000→9002: MinIO holds host :9000)
       - "127.0.0.1:9444:9443"     # HTTPS (9443→9444)
@@ -87,6 +89,8 @@ services:
     volumes:
       - authentik_media:/media
       - authentik_templates:/templates
+      # OIDC RP registration — auto-discovered blueprint (subdir, no /blueprints/system shadow)
+      - ../blueprints:/blueprints/telcoss:ro
     depends_on:
       authentik-redis:
         condition: service_healthy
