@@ -1,0 +1,115 @@
+# ============================================================================
+# Authentik — platform IdP (ADR-0018)
+#
+# Discovered via root docker-compose.yml `include:`. Relative bind paths resolve
+# against THIS fragment's dir (authentik/compose/), not the repo root.
+#
+# Profile-gated under ["authentik"] so it never auto-starts on a bare
+# `docker compose up`. Verify:
+#   docker compose config --services                      # MUST NOT list authentik-*
+#   docker compose --profile authentik config --services  # MUST list them
+#
+# Topology:
+#   - server + worker: ghcr.io/goauthentik/server, PINNED tag (not :latest).
+#   - DB: the shared postgres-multi instance, DB `authentik` owned by a dedicated
+#     `authentik` role (NOT app_authentik) — bootstrap via authentik/db/bootstrap.sql.
+#     No cross-profile depends_on on postgres-multi (different profile); Authentik
+#     retries the DB on startup.
+#   - authentik-redis: a DEDICATED throwaway redis (cache + task broker), NOT the
+#     ACL-namespaced redis-shared — Authentik wants a whole keyspace + no ACL.
+#   - ports: loopback only. 9000→9002 / 9443→9444 to avoid the MinIO :9000 clash.
+#   - NO docker socket on the worker: OIDC-only deployment. Mount it later only if
+#     outposts (proxy/LDAP providers) are needed.
+# ============================================================================
+
+x-authentik-env: &authentik-env
+  AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?AUTHENTIK_SECRET_KEY must be set in .env}
+  AUTHENTIK_POSTGRESQL__HOST: postgres-multi
+  AUTHENTIK_POSTGRESQL__PORT: "5432"
+  AUTHENTIK_POSTGRESQL__NAME: authentik
+  AUTHENTIK_POSTGRESQL__USER: authentik
+  AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_PG_PASSWORD:?AUTHENTIK_PG_PASSWORD must be set in .env}
+  AUTHENTIK_REDIS__HOST: authentik-redis
+  # akadmin seed — only consumed on first boot of an empty DB.
+  AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:?AUTHENTIK_BOOTSTRAP_PASSWORD must be set in .env}
+  AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-akadmin@telcoss.local}
+
+services:
+  authentik-redis:
+    image: redis:7-alpine
+    profiles: ["authentik"]
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - authentik_redis_data:/data
+    networks:
+      - basic-infra-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2026.5.3
+    profiles: ["authentik"]
+    command: server
+    environment: *authentik-env
+    volumes:
+      - authentik_media:/media
+      - authentik_templates:/templates
+    ports:
+      - "127.0.0.1:9002:9000"     # HTTP  (9000→9002: MinIO holds host :9000)
+      - "127.0.0.1:9444:9443"     # HTTPS (9443→9444)
+    depends_on:
+      authentik-redis:
+        condition: service_healthy
+    networks:
+      - basic-infra-net
+    restart: unless-stopped
+    labels:
+      basic-infra.observability.logs: "true"
+      basic-infra.observability.service: "authentik-server"
+      basic-infra.observability.env: "${ENV:-dev}"
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+      start_period: 60s
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2026.5.3
+    profiles: ["authentik"]
+    command: worker
+    environment: *authentik-env
+    volumes:
+      - authentik_media:/media
+      - authentik_templates:/templates
+    depends_on:
+      authentik-redis:
+        condition: service_healthy
+    networks:
+      - basic-infra-net
+    restart: unless-stopped
+    labels:
+      basic-infra.observability.logs: "true"
+      basic-infra.observability.service: "authentik-worker"
+      basic-infra.observability.env: "${ENV:-dev}"
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  authentik_redis_data:
+  authentik_media:
+  authentik_templates:
+
+networks:
+  basic-infra-net:
+    external: true
+    name: basic-infra-net

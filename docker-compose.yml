@@ -27,3 +27,4 @@ include:
   - postgres/compose/postgres.yml
   - tracing/compose/tracing.yml
   - redis_shared/compose/redis-shared.yml
+  - authentik/compose/authentik.yml
