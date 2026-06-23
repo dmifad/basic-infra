@@ -24,6 +24,11 @@ entries:
       name: telcoss-spa
       client_type: public
       client_id: telcoss-spa
+      # Authentik 2026.5 requires an explicit grant_types allowlist (empty by
+      # default → rejects authorize). Variant A: authorization_code only (PKCE),
+      # no refresh_token.
+      grant_types:
+        - authorization_code
       # sub = user UUID (not the default hashed_user_id) so telcoss can map
       # sub → UserId (NewType over UUID) directly. See telcoss J1.
       sub_mode: user_uuid
