@@ -31,6 +31,8 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "moto[s3]>=5.0",
+    "testcontainers>=4.0",
+    "asyncpg>=0.29",
     "ruff>=0.4",
     "mypy>=1.8",
 ]
@@ -54,6 +56,7 @@ testpaths = [
     "sdk/basic_infra_redis_client/tests",
     "postgres/tests",
     "redis_shared/tests",
+    "outbox/tests",
 ]
 # Resolve `storage.*` and both SDK packages with no PYTHONPATH prefix.
 # (Editable-installing the storage SDK is unsupported — hatchling force-includes
@@ -64,6 +67,7 @@ pythonpath = [
     "sdk/basic_infra_observability_client",
     "sdk/basic_infra_postgres_client",
     "sdk/basic_infra_redis_client",
+    "outbox",
 ]
 markers = [
     "integration: requires an out-of-process backend (moto / testcontainers / live observability stack)",
@@ -76,9 +80,9 @@ target-version = "py311"
 [tool.mypy]
 python_version = "3.11"
 strict = true
-mypy_path = "sdk/basic_infra_storage_client:sdk/basic_infra_observability_client:sdk/basic_infra_postgres_client:."
+mypy_path = "sdk/basic_infra_storage_client:sdk/basic_infra_observability_client:sdk/basic_infra_postgres_client:outbox:."
 
 [[tool.mypy.overrides]]
 # Dependencies without bundled type stubs (mirrors the storage SDK config).
-module = ["aiobotocore.*", "botocore.*", "aiofiles", "aiofiles.*"]
+module = ["aiobotocore.*", "botocore.*", "aiofiles", "aiofiles.*", "asyncpg", "asyncpg.*"]
 ignore_missing_imports = true
