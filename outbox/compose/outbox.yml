@@ -5,7 +5,7 @@ services:
   outbox-dispatcher:
     profiles: ["outbox"]
     build:
-      context: ..
+      context: ../..
       dockerfile: outbox/Dockerfile
     environment:
       # outbox_reader@<tenant-db> on the shared postgres-multi (in-network).
