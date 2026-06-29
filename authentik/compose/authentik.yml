@@ -61,6 +61,9 @@ services:
       - authentik_templates:/templates
       # OIDC RP registration — auto-discovered blueprint (subdir, no /blueprints/system shadow)
       - ../blueprints:/blueprints/telcoss:ro
+      # Consumer blueprint mount — set CONSUMER_BLUEPRINTS_PATH in .env to the consumer's
+      # blueprint dir. Defaults to the empty blueprints-consumer/ dir (no-op).
+      - ${CONSUMER_BLUEPRINTS_PATH:-../blueprints-consumer}:/blueprints/consumer:ro
     ports:
       - "127.0.0.1:9002:9000"     # HTTP  (9000→9002: MinIO holds host :9000)
       - "127.0.0.1:9444:9443"     # HTTPS (9443→9444)
@@ -91,6 +94,9 @@ services:
       - authentik_templates:/templates
       # OIDC RP registration — auto-discovered blueprint (subdir, no /blueprints/system shadow)
       - ../blueprints:/blueprints/telcoss:ro
+      # Consumer blueprint mount — set CONSUMER_BLUEPRINTS_PATH in .env to the consumer's
+      # blueprint dir. Defaults to the empty blueprints-consumer/ dir (no-op).
+      - ${CONSUMER_BLUEPRINTS_PATH:-../blueprints-consumer}:/blueprints/consumer:ro
     depends_on:
       authentik-redis:
         condition: service_healthy
