@@ -151,6 +151,10 @@ provision:  ## provision tenant: make provision TENANT=telcoss
 	@test -n "$(TENANT)" || (echo "TENANT не задан: make provision TENANT=<name>" && exit 1)
 	PYTHONPATH=. $(VENV)/bin/python -m postgres.cli provision $(TENANT)
 
+.PHONY: provision-outbox-reader
+provision-outbox-reader:  ## создать/переутвердить роль outbox_reader (OUTBOX_READER_PASSWORD из env)
+	PYTHONPATH=. $(VENV)/bin/python -m postgres.cli provision-outbox-reader
+
 # Double-gated: Makefile CONFIRM=yes AND the CLI's own --confirm (rc 2 if
 # missing) — matching redis-deprovision, so a tenant DB can't be dropped by a
 # bare invocation.

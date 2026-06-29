@@ -46,6 +46,20 @@ async def _provision(tenant: str) -> int:
     return 0
 
 
+async def _provision_outbox_reader() -> int:
+    password = os.environ.get("OUTBOX_READER_PASSWORD", "")
+    if not password:
+        print("OUTBOX_READER_PASSWORD не задан", file=sys.stderr)
+        return 2
+    adapter = _adapter(allow_destructive=False)
+    if not await adapter.health():
+        print("postgres-multi недоступен (проверь make up-postgres)", file=sys.stderr)
+        return 2
+    await adapter.provision_outbox_reader(password)
+    print("provisioned: outbox_reader")
+    return 0
+
+
 async def _deprovision(tenant: str, *, confirm: bool) -> int:
     if not confirm:
         print(
@@ -67,6 +81,11 @@ def main(argv: list[str] | None = None) -> int:
     p_prov = sub.add_parser("provision", help="создать tenant-БД + PostGIS")
     p_prov.add_argument("tenant")
 
+    sub.add_parser(
+        "provision-outbox-reader",
+        help="создать/переутвердить роль outbox_reader (пароль из OUTBOX_READER_PASSWORD)",
+    )
+
     p_deprov = sub.add_parser("deprovision", help="удалить tenant-БД")
     p_deprov.add_argument("tenant")
     p_deprov.add_argument(
@@ -78,6 +97,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "provision":
         return asyncio.run(_provision(args.tenant))
+    if args.command == "provision-outbox-reader":
+        return asyncio.run(_provision_outbox_reader())
     if args.command == "deprovision":
         return asyncio.run(_deprovision(args.tenant, confirm=args.confirm))
     return 1

@@ -1,0 +1,29 @@
+# Outbox dispatcher service (ADR-0019, J3.1-c). Profile-gated so it stays out of
+# the default platform `up` — enable with `--profile outbox`. The consumer
+# (telcoss) supplies the contract values via env (OUTBOX_DSN as outbox_reader).
+services:
+  outbox-dispatcher:
+    profiles: ["outbox"]
+    build:
+      context: ../..
+      dockerfile: outbox/Dockerfile
+    environment:
+      # outbox_reader@<tenant-db> on the shared postgres-multi (in-network).
+      OUTBOX_DSN: ${OUTBOX_DSN:?OUTBOX_DSN not set (outbox_reader DSN)}
+      OUTBOX_TABLE: ${OUTBOX_TABLE:-inventory.outbox}
+      OUTBOX_CHANNEL: ${OUTBOX_CHANNEL:-telcoss_outbox}
+      OUTBOX_POLL_SECONDS: ${OUTBOX_POLL_SECONDS:-30}
+      BASIC_INFRA_OBSERVABILITY_ENV: ${ENV:-dev}
+      BASIC_INFRA_OBSERVABILITY_TENANT: telcoss
+    networks:
+      - basic-infra-net
+    labels:
+      basic-infra.observability.logs: "true"
+      basic-infra.observability.service: "outbox-dispatcher"
+      basic-infra.observability.env: "${ENV:-dev}"
+      basic-infra.observability.tenant: "telcoss"
+    restart: unless-stopped
+
+networks:
+  basic-infra-net:
+    external: true

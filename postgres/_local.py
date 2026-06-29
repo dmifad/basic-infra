@@ -197,6 +197,43 @@ class LocalAdapter:
         finally:
             await conn.close()
 
+    async def provision_outbox_reader(self, password: str) -> None:
+        """Idempotently (re-)assert the least-privilege ``outbox_reader`` login role.
+
+        Creates the role if absent, then always re-asserts LOGIN + password.
+        No grants issued here — column-level grants on ``inventory.outbox`` are
+        applied by telcoss migrations 0015/0017 (ADR-0019 §cross-repo coupling).
+
+        :raises ValueError: if ``password`` is empty.
+        """
+        if not password:
+            raise ValueError("provision_outbox_reader: пустой пароль")
+        conn = await asyncpg.connect(
+            host=self._host,
+            port=self._port,
+            user=self._admin_user,
+            password=self._admin_password,
+            database="postgres",
+        )
+        try:
+            async with conn.transaction():
+                await conn.execute(
+                    "SELECT set_config('basic_infra.outbox_reader_pw', $1, true)",
+                    password,
+                )
+                await conn.execute(
+                    "DO $$ BEGIN "
+                    "IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'outbox_reader') "
+                    "THEN CREATE ROLE outbox_reader; END IF; "
+                    "EXECUTE format("
+                    "'ALTER ROLE outbox_reader WITH LOGIN NOSUPERUSER NOCREATEDB "
+                    "NOCREATEROLE NOBYPASSRLS PASSWORD %L', "
+                    "current_setting('basic_infra.outbox_reader_pw')); "
+                    "END $$"
+                )
+        finally:
+            await conn.close()
+
     async def deprovision(self, tenant: TenantId) -> None:
         if not self._allow_destructive:
             raise PermissionError(
