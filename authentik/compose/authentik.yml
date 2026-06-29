@@ -32,7 +32,7 @@ x-authentik-env: &authentik-env
   AUTHENTIK_REDIS__HOST: authentik-redis
   # akadmin seed — only consumed on first boot of an empty DB.
   AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:?AUTHENTIK_BOOTSTRAP_PASSWORD must be set in .env}
-  AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-akadmin@telcoss.local}
+  AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@platform.local}
 
 services:
   authentik-redis:

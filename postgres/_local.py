@@ -132,7 +132,7 @@ class LocalAdapter:
                 # квотируется format(%L) — без ручного экранирования и без
                 # зависимости от standard_conforming_strings.
                 await conn.execute(
-                    "SELECT set_config('telcoss.app_pw', $1, true)", password
+                    "SELECT set_config('basic_infra.app_pw', $1, true)", password
                 )
                 # Роль: создать при отсутствии, затем ВСЕГДА переутвердить атрибуты
                 # + пароль (server-side %I/%L). role валидирован (app_<tenant>).
@@ -143,7 +143,7 @@ class LocalAdapter:
                     "EXECUTE format("
                     "'ALTER ROLE %I WITH LOGIN NOSUPERUSER NOCREATEDB "
                     "NOCREATEROLE NOBYPASSRLS PASSWORD %L', "
-                    f"'{role}', current_setting('telcoss.app_pw')); "
+                    f"'{role}', current_setting('basic_infra.app_pw')); "
                     "END $$"
                 )
             # Транзакция закрыта — пароль-GUC сброшен. Остальные гранты идемпотентны
