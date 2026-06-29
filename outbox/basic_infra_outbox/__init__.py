@@ -2,8 +2,8 @@
 
 A reusable platform mechanism: it reads unprocessed rows from a consumer's outbox
 table, delivers each to a pluggable Sink, and marks them processed. It carries no
-consumer specifics — table/channel/dsn/sink are config. telcoss is the first
-consumer (table `inventory.outbox`, channel `telcoss_outbox`).
+consumer specifics — table/channel/dsn/sink are required config supplied by the
+consumer.
 """
 from __future__ import annotations
 

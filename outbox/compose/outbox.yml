@@ -8,20 +8,20 @@ services:
       context: ../..
       dockerfile: outbox/Dockerfile
     environment:
-      # outbox_reader@<tenant-db> on the shared postgres-multi (in-network).
+      # Consumer supplies all contract values via env (see .env).
       OUTBOX_DSN: ${OUTBOX_DSN:?OUTBOX_DSN not set (outbox_reader DSN)}
-      OUTBOX_TABLE: ${OUTBOX_TABLE:-inventory.outbox}
-      OUTBOX_CHANNEL: ${OUTBOX_CHANNEL:-telcoss_outbox}
+      OUTBOX_TABLE: ${OUTBOX_TABLE:?OUTBOX_TABLE not set (schema-qualified outbox table)}
+      OUTBOX_CHANNEL: ${OUTBOX_CHANNEL:?OUTBOX_CHANNEL not set (NOTIFY channel)}
       OUTBOX_POLL_SECONDS: ${OUTBOX_POLL_SECONDS:-30}
       BASIC_INFRA_OBSERVABILITY_ENV: ${ENV:-dev}
-      BASIC_INFRA_OBSERVABILITY_TENANT: telcoss
+      BASIC_INFRA_OBSERVABILITY_TENANT: ${BASIC_INFRA_OBSERVABILITY_TENANT:?BASIC_INFRA_OBSERVABILITY_TENANT not set}
     networks:
       - basic-infra-net
     labels:
       basic-infra.observability.logs: "true"
       basic-infra.observability.service: "outbox-dispatcher"
       basic-infra.observability.env: "${ENV:-dev}"
-      basic-infra.observability.tenant: "telcoss"
+      basic-infra.observability.tenant: "${BASIC_INFRA_OBSERVABILITY_TENANT}"
     restart: unless-stopped
 
 networks:
