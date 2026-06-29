@@ -59,8 +59,6 @@ services:
     volumes:
       - authentik_media:/media
       - authentik_templates:/templates
-      # OIDC RP registration — auto-discovered blueprint (subdir, no /blueprints/system shadow)
-      - ../blueprints:/blueprints/telcoss:ro
       # Consumer blueprint mount — set CONSUMER_BLUEPRINTS_PATH in .env to the consumer's
       # blueprint dir. Defaults to the empty blueprints-consumer/ dir (no-op).
       - ${CONSUMER_BLUEPRINTS_PATH:-../blueprints-consumer}:/blueprints/consumer:ro
@@ -92,8 +90,6 @@ services:
     volumes:
       - authentik_media:/media
       - authentik_templates:/templates
-      # OIDC RP registration — auto-discovered blueprint (subdir, no /blueprints/system shadow)
-      - ../blueprints:/blueprints/telcoss:ro
       # Consumer blueprint mount — set CONSUMER_BLUEPRINTS_PATH in .env to the consumer's
       # blueprint dir. Defaults to the empty blueprints-consumer/ dir (no-op).
       - ${CONSUMER_BLUEPRINTS_PATH:-../blueprints-consumer}:/blueprints/consumer:ro
